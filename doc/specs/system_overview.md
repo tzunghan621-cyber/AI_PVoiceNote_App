@@ -281,6 +281,7 @@ AI_PVoiceNote_App/
 │   │   └── settings_view.py      # 設定頁面
 │   ├── core/
 │   │   ├── __init__.py
+│   │   ├── models.py             # 所有 dataclass 集中定義
 │   │   ├── audio_recorder.py     # 麥克風錄音（串流輸出）
 │   │   ├── audio_importer.py     # 音檔匯入與切段
 │   │   ├── stream_processor.py   # 串流管線控制器
