@@ -122,6 +122,7 @@ class ActionItem:
     status: str               # "open" | "done" | "dropped"
     priority: str             # "high" | "medium" | "low"
     note: str | None          # 使用者補充備註
+    user_edited: bool         # 是否被使用者手動修改過（True 時 AI 週期更新不覆蓋）
     created: str              # ISO 8601
     updated: str              # ISO 8601
 
@@ -334,9 +335,10 @@ knowledge_base:
 
 # 串流處理
 streaming:
+  transcribe_chunk_sec: 10        # 即時轉錄區塊長度（秒），送給 Whisper 的小區塊
+  audio_chunk_duration_sec: 600   # 音訊暫存分段長度（秒），每 10 分鐘切段存 WAV
   summary_interval_sec: 180       # 摘要更新週期（秒），預設 3 分鐘
   summary_min_new_segments: 10    # 至少累積 N 個新 segments 才觸發摘要
-  audio_chunk_duration_sec: 600   # 音訊分段長度（秒），預設 10 分鐘
 
 # 音訊
 audio:
