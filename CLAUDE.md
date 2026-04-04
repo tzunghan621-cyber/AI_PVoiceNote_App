@@ -1,22 +1,29 @@
 # AI_PVoiceNote_App — Agent 指引
 
-> 個人會議指揮中心。語音轉錄 + RAG 知識庫校正 + 本地端 LLM 摘要。
+> 會議即時智能儀表板。開會時即時轉錄 + RAG 校正 + 週期性摘要，會後可編輯匯出。
 
 ---
 
 ## 專案概要
 
-- **產品**：Desktop App（Flet），會議錄音轉錄、專有名詞校正、結構化摘要
-- **核心特色**：三區塊工作區（逐字稿 / 會議重點 / Action Items），連動個人 Obsidian 知識庫
+- **產品**：Desktop App（Flet），會議進行中即時顯示逐字稿/重點/Action Items
+- **兩種模態**：會中（即時儀表板，唯讀）→ 會後（編輯工作區，可修改/回饋/匯出）
+- **App 自有知識庫**：獨立的智能產品，透過 Claude Code 從 Obsidian 知識庫同步充實
 - **全程本地運算**：faster-whisper + Gemma 4（Ollama）+ ChromaDB
 - **硬體基準**：Surface Pro 9（i7-1255U / 16GB / CPU only）
+
+## 核心架構概念
+
+- **串流 Pipeline**：錄音、轉錄、校正同時進行，摘要每 3~5 分鐘週期性更新
+- **知識庫分層**：App 自有知識庫（data/terms + ChromaDB）+ 外部 Obsidian 同步
+- **三區塊**：逐字稿 / 會議重點 / Action Items，響應式佈局（三欄/兩欄/單欄）
 
 ## 開發規範
 
 遵循 [[AI協作開發規範]] v2.7-AgentTeam：
 - P-S-C-V 強制工作流 + Review Gate
 - 五角色 Agent 團隊（Director / Builder / Reviewer / Verifier / Researcher）
-- **甲方 = 使用者**，**Director = Claude**
+- **甲方 = 使用者**，**大統領 = Director (Claude)**
 
 ## 角色與權責
 
@@ -53,15 +60,15 @@ doc/
 | Desktop UI | Flet |
 | 語言 | Python 3.11+ |
 
-## 三階段使用模式
+## 三階段進化模式
 
-1. **養庫** — 從 Obsidian 知識庫提取重點建成 RAG 詞條
-2. **使用 + 回饋** — 執行 Pipeline，審閱，標記校正品質
-3. **優化** — 根據回饋增補/移除/調整詞條
+1. **養庫** — 甲方透過 Claude Code 從 Obsidian 知識庫同步重點至 App 知識庫
+2. **使用 + 回饋** — 開會即時使用，會後審閱回饋
+3. **優化** — 根據回饋增補/移除/調整 App 知識庫詞條
 
 ## 關鍵 Specs
 
-- [[system_overview]] — 系統架構、技術選型、Pipeline 流程
-- [[data_schema]] — 資料結構、詞條格式、回饋格式、匯出格式
-- [[ui_spec]] — Desktop App 介面規格
-- [[team_roster]] — 團隊花名冊與職責
+- [[system_overview]] — 系統架構、串流 Pipeline、知識庫架構
+- [[data_schema]] — 資料結構、詞條格式、Session、回饋、匯出格式
+- [[ui_spec]] — 即時儀表板（會中）+ 編輯工作區（會後）
+- [[team_roster]] — 團隊名冊與職責

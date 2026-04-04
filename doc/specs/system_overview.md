@@ -1,9 +1,9 @@
 ---
 title: System Overview
-date: 2026-04-04
+date: 2026-04-05
 type: spec
 status: draft
-author: Director (Claude)
+author: 大統領
 tags:
   - architecture
   - tech-stack
@@ -13,19 +13,21 @@ tags:
 # System Overview
 
 > 語音會議摘要筆記 — 系統架構與技術選型規格書
-> 相關規格：[[data_schema]] ｜ [[ui_spec]]
+> 相關規格：[[data_schema]] ｜ [[ui_spec]] ｜ [[team_roster]]
 
 ---
 
 ## 1. 產品定位
 
-**個人會議指揮中心。** 不只是轉錄摘要工具，而是一個可編輯、可持續迭代的會議工作區。
+**會議即時智能儀表板。** 開會時投影在大螢幕或放在筆電側邊，即時顯示逐字稿、會議重點、Action Items。它不是會後才用的工具，它是**會議進行中的一員**。
 
 核心能力：
-- 會議錄音即時轉錄，RAG 連動個人 Obsidian 知識庫校正專有名詞
-- 工作區三區塊：**逐字稿** / **會議重點** / **Action Items**，AI 產出後使用者可即時編輯修正
-- 全程本地運算（Gemma 4 + faster-whisper），會議內容不外傳
-- 持續進化：養庫 → 使用回饋 → 優化知識詞條，越用越準
+- **即時串流處理**：錄音同時轉錄 → 校正 → 每 3~5 分鐘週期性更新重點與 Action Items
+- **三區塊即時儀表板**：逐字稿即時滾動 / 會議重點累積更新 / Action Items 累積更新
+- **會後編輯模式**：停止錄音後，同一畫面切換為可編輯的工作區
+- **App 自有知識庫**：獨立的智能產品，有自己的知識體系，透過 Claude Code 從外部 Obsidian 知識庫同步充實
+- **全程本地運算**：Gemma 4 + faster-whisper + ChromaDB，會議內容不外傳
+- **自我進化**：從每次會議的使用回饋中學習，越用越準
 
 > 開發規範遵循 [[AI協作開發規範]]（P-S-C-V 流程 + Agent 團隊架構）
 
@@ -56,130 +58,206 @@ tags:
 ### 3.1 模組分層
 
 ```
-┌─────────────────────────────────────┐
-│            UI Layer (Flet)          │
-│  錄音 │ 匯入 │ 審閱 │ 詞條管理 │ 設定  │
-└──────────────┬──────────────────────┘
+┌─────────────────────────────────────────┐
+│              UI Layer (Flet)            │
+│  即時儀表板（會中）│ 編輯工作區（會後）   │
+│  詞條管理 │ 回饋統計 │ 設定               │
+└──────────────┬──────────────────────────┘
                │
-┌──────────────▼──────────────────────┐
-│          Core Pipeline              │
-│                                     │
-│  ┌───────────┐  ┌────────────────┐  │
-│  │ Transcriber│  │ RAG Corrector  │  │
-│  │ (Whisper)  │→│ (ChromaDB +    │  │
-│  │            │  │  Embedding)    │  │
-│  └───────────┘  └───────┬────────┘  │
-│                         │           │
-│                ┌────────▼────────┐  │
-│                │   Summarizer    │  │
-│                │   (Gemma 4)     │  │
-│                └─────────────────┘  │
-└──────────────┬──────────────────────┘
+┌──────────────▼──────────────────────────┐
+│        Streaming Pipeline               │
+│                                         │
+│  AudioRecorder ──→ StreamProcessor      │
+│       │              │                  │
+│       │        ┌─────┴─────┐            │
+│       │        │ Transcriber│            │
+│       │        │ (Whisper)  │            │
+│       │        └─────┬─────┘            │
+│       │              │ 即時              │
+│       │        ┌─────▼──────┐           │
+│       │        │RAG Corrector│           │
+│       │        └─────┬──────┘           │
+│       │              │ 即時              │
+│  每 3~5 分鐘    ┌─────▼──────┐           │
+│  週期觸發 ────→ │ Summarizer │           │
+│                │ (Gemma 4)  │           │
+│                └────────────┘           │
+└──────────────┬──────────────────────────┘
                │
-┌──────────────▼──────────────────────┐
-│          Data Layer                 │
-│  音檔(暫存) │ 詞條庫 │ 回饋紀錄 │ 設定  │
-└─────────────────────────────────────┘
+┌──────────────▼──────────────────────────┐
+│           Data Layer                    │
+│  App 知識庫（ChromaDB + 詞條）           │
+│  Sessions │ 回饋紀錄 │ 設定              │
+└─────────────────────────────────────────┘
 ```
 
 ### 3.2 模組職責
 
 | 模組 | 職責 | 輸入 | 輸出 |
 |------|------|------|------|
-| **AudioRecorder** | 麥克風錄音，產生 WAV | 麥克風音訊流 | WAV 檔（暫存） |
-| **AudioImporter** | 匯入外部音檔，統一轉為 WAV | WAV/MP3/M4A 檔案路徑 | WAV 檔（暫存） |
-| **Transcriber** | 語音轉文字，帶時間戳 | WAV 檔 | 逐字稿（含 segment 時間戳），格式見 [[data_schema#2. 轉錄 Segment]] |
-| **KnowledgeBase** | 管理知識詞條，建立/更新向量索引 | 詞條 CRUD 操作 | ChromaDB 索引，詞條格式見 [[data_schema#1. 知識詞條（Term）]] |
-| **RAGCorrector** | 用知識庫比對校正逐字稿中的專有名詞 | 逐字稿 + ChromaDB 索引 | 校正後逐字稿（含校正標記），格式見 [[data_schema#3. 校正結果]] |
-| **Summarizer** | 呼叫 Gemma 4 產生結構化摘要 | 校正後逐字稿 | 摘要 / 待辦 / 決議，格式見 [[data_schema#4. 摘要結果]] |
-| **SessionManager** | 管理單次會議的完整生命週期 | Pipeline 各階段產出 | Session 物件，格式見 [[data_schema#5. Session（單次會議）]] |
+| **AudioRecorder** | 麥克風錄音，串流輸出音訊區塊 | 麥克風音訊流 | 音訊區塊（串流）+ WAV 分段檔（暫存） |
+| **AudioImporter** | 匯入外部音檔，切段後送入 Pipeline | WAV/MP3/M4A 檔案路徑 | 音訊區塊序列 + WAV 分段檔（暫存） |
+| **StreamProcessor** | 串流管線控制器，協調轉錄→校正→週期摘要 | 音訊區塊串流 | 即時 UI 更新事件 |
+| **Transcriber** | 語音轉文字，即時產出 segments | 音訊區塊 | 逐字稿 segments（即時），格式見 [[data_schema#2. 轉錄 Segment]] |
+| **KnowledgeBase** | App 自有知識庫，管理詞條 + 向量索引 | 詞條 CRUD / 外部同步 | ChromaDB 索引，格式見 [[data_schema#1. 知識詞條（Term）]] |
+| **RAGCorrector** | 即時校正逐字稿中的專有名詞 | 逐字稿 segment + ChromaDB | 校正後 segment（即時），格式見 [[data_schema#3. 校正結果]] |
+| **Summarizer** | 週期性呼叫 Gemma 4 產生/更新摘要 | 累積的校正後逐字稿 | 會議重點 + Action Items + 決議（增量更新），格式見 [[data_schema#4. 摘要結果]] |
+| **SessionManager** | 管理會議生命週期（會中 → 會後 → 匯出） | Pipeline 各階段產出 | Session 物件，格式見 [[data_schema#5. Session（單次會議）]] |
 | **Exporter** | 匯出 Markdown，匯出後刪除音檔 | Session 物件 | .md 檔案，格式見 [[data_schema#7. 匯出格式（Markdown）]] |
 | **FeedbackStore** | 儲存/讀取校正回饋紀錄 | 使用者回饋操作 | JSON 回饋紀錄，格式見 [[data_schema#6. 回饋紀錄（Feedback）]] |
 | **ConfigManager** | 讀取/寫入應用設定 | YAML 設定檔 | 設定物件，格式見 [[data_schema#8. 設定檔]] |
 
 ---
 
-## 4. 處理 Pipeline（單次會議流程）
+## 4. 串流處理 Pipeline
 
-### 4.1 分段處理策略（Chunked Pipeline）
+### 4.1 即時串流架構
 
-長時間錄音（數小時）會造成記憶體與處理時間壓力。所有 Pipeline 階段採分段處理：
-
-| 資源 | 限制 | 分段策略 |
-|------|------|----------|
-| WAV 暫存 | 16kHz/16bit/mono ≈ 1.9MB/min | 錄音時每 10 分鐘自動切段儲存，不累積整段在記憶體 |
-| Whisper 轉錄 | CPU 推理，1 小時音檔約需 15-30 分鐘 | 逐段送入（10 分鐘/段），即時產出 segments，邊轉邊顯示進度 |
-| RAG 校正 | 輕量操作，無瓶頸 | 每段轉錄完成後立即校正，不需等全部轉完 |
-| Gemma 4 摘要 | 128K context ≈ 可處理 2-3 小時逐字稿 | 若逐字稿超過 context 上限 → 階層式摘要（見 4.2） |
-
-### 4.2 階層式摘要（Hierarchical Summarization）
-
-當逐字稿長度超過模型 context window 時：
+與舊版批次處理的根本差異：**錄音、轉錄、校正同時進行，摘要週期性更新**。
 
 ```
-段落 1 逐字稿 → Gemma 4 → 段落摘要 1
-段落 2 逐字稿 → Gemma 4 → 段落摘要 2
-段落 3 逐字稿 → Gemma 4 → 段落摘要 3
+時間軸 ──────────────────────────────────────────→
+
+錄音    ████████████████████████████████████████ STOP
+         │    │    │    │    │    │    │
+轉錄     ██   ██   ██   ██   ██   ██   ██
+         即時逐字稿持續產出，UI 即時滾動顯示
+              │    │    │    │    │    │
+校正          ██   ██   ██   ██   ██   ██
+              即時校正，校正標記即時出現
+                   │              │
+摘要                ██             ██          ██
+                  週期摘要 1     週期摘要 2   最終摘要
+                  (重點+Actions  (累積更新)  (停止後)
+                   首次出現)
+```
+
+### 4.2 週期性摘要更新
+
+| 參數 | 值 | 說明 |
+|------|---|------|
+| 摘要週期 | 3~5 分鐘（可設定） | 累積足夠新內容後觸發 |
+| 觸發條件 | 新增 ≥ N 個 segments 且距上次摘要 ≥ 週期時間 | 避免內容太少時浪費推理資源 |
+| 更新方式 | 增量式 | 將新段落 + 前次摘要送入 Gemma 4，產生更新後的重點/Actions/決議 |
+| 最終摘要 | 停止錄音後 | 全部內容的最終整合摘要 |
+
+**增量摘要 Prompt 策略：**
+
+```
+前次摘要結果：{previous_summary}
+新增逐字稿段落：{new_segments}
+
+請更新會議重點、Action Items、決議事項。
+保留仍然有效的項目，新增或修改有變化的項目。
+```
+
+### 4.3 長會議處理
+
+長時間會議（數小時）的資源管理：
+
+| 資源 | 策略 |
+|------|------|
+| 音訊記憶體 | 串流處理，不在記憶體累積整段；每 10 分鐘切段存檔 |
+| Whisper | 逐段即時處理，段與段之間無依賴 |
+| RAG 校正 | 逐 segment 即時處理，無累積壓力 |
+| Gemma 4 摘要 | 增量式更新，每次只送新段落 + 前次摘要；若累積超過 100K tokens 則採階層式摘要 |
+| UI 逐字稿 | 虛擬捲動，只渲染可見區域 |
+
+### 4.4 階層式摘要（Hierarchical Summarization）
+
+當累積逐字稿超過 Gemma 4 context window 時自動啟用：
+
+```
+段落群 1 (0~30min)  → 段落摘要 1
+段落群 2 (30~60min) → 段落摘要 2
+段落群 3 (60~90min) → 段落摘要 3
 ...
-          ↓
-所有段落摘要 → Gemma 4 → 最終合併摘要
-                        （含全局待辦 / 決議 / 關鍵詞）
+全部段落摘要 → 最終合併摘要
 ```
 
-- **分段閾值**：逐字稿總 token 數 > 100K 時啟用（預留 28K 給 prompt + 輸出）
-- **分段大小**：每段約 30 分鐘的逐字稿內容
-- **段落摘要保留**：合併後段落摘要仍保留在 Session 中，匯出時可選擇是否包含
+### 4.5 音檔匯入流程
 
-### 4.3 完整流程
+匯入音檔不是即時的，但仍走串流 Pipeline：
 
 ```
-1. 輸入
-   ├── 麥克風錄音 → AudioRecorder → WAV 分段檔（每 10 分鐘切段）
-   └── 音檔匯入 → AudioImporter → WAV 分段檔（長檔自動切段）
-          ↓
-2. 轉錄（逐段，可與步驟 3 交錯執行）
-   WAV 段 N → Transcriber (faster-whisper small)
-            → 逐字稿 segments [{ start, end, text }]
-          ↓
-3. RAG 校正（每段轉錄完成後立即執行）
-   逐字稿段 N → RAGCorrector
-               ├── 查詢 ChromaDB 取得相關詞條
-               ├── 比對替換專有名詞
-               └── 標記校正位置與原始值
-            → 校正後逐字稿 [{ start, end, text, corrections }]
-          ↓
-4. 摘要（全部段落校正完成後）
-   ├── 短會議（< 100K tokens）：整份逐字稿 → Summarizer → 結構化摘要
-   └── 長會議（≥ 100K tokens）：階層式摘要（見 4.2）
-       → 結構化摘要 { summary, action_items, decisions }
-          ↓
-5. 審閱（UI）
-   使用者在 app 內檢視：
-   ├── 逐字稿（可對照校正標記）
-   ├── 摘要 / 待辦 / 決議
-   └── 回饋標記（校正正確/錯誤/遺漏）
-          ↓
-6. 匯出（使用者手動觸發）
-   Session → Exporter → Markdown 檔案（資訊完整）
-   匯出成功 → 刪除原始 WAV 分段暫存檔
-          ↓
-7. 回饋儲存
-   回饋標記 → FeedbackStore → data/feedback/{session_id}.json
+音檔匯入 → 切段 → 逐段送入 StreamProcessor
+                    → 轉錄 + 校正即時產出（UI 顯示進度）
+                    → 每段完成後觸發摘要更新
+                    → 全部完成後最終摘要
+```
+
+匯入時 UI 直接進入儀表板畫面，逐字稿/重點/Actions 隨處理進度逐步填充。
+
+---
+
+## 5. 知識庫架構
+
+### 5.1 App 自有知識庫
+
+App 是一個**獨立的智能產品**，擁有自己的知識體系：
+
+```
+App 知識庫
+├── 詞條庫（data/terms/）     ← 結構化知識詞條（YAML）
+├── 向量索引（data/chroma/）   ← ChromaDB 嵌入向量
+└── 會議記憶                   ← 從歷史會議中累積的語境知識
+```
+
+### 5.2 外部知識同步
+
+App 的知識庫透過 Claude Code 從使用者的 Obsidian 知識庫同步充實：
+
+```
+使用者的 Obsidian 知識庫（KNOWLEDGE_BASE/）
+          │
+          │  甲方透過 Claude Code 指揮
+          │  「把這些重點建進 App 的知識庫」
+          ▼
+    Claude Code 提取、整理、格式化
+          │
+          ▼
+    App 自有知識庫（data/terms/ + data/chroma/）
+```
+
+| 來源 | 方式 | 說明 |
+|------|------|------|
+| **Obsidian 知識庫** | 由 Claude Code 手動同步 | 甲方指揮 Claude Code 提取重點，整理成詞條匯入 |
+| **會議回饋** | App 自動學習 | 高頻遺漏 → 建議新增詞條；低效詞條 → 建議調整/移除 |
+| **手動維護** | App 內建詞條管理 UI | 使用者直接在 App 中新增/編輯/刪除詞條 |
+
+### 5.3 知識庫與 Pipeline 的關係
+
+```
+知識庫 ──→ RAGCorrector（即時校正）
+  ↑                │
+  │                ▼
+  └──── FeedbackStore（回饋驅動優化）
 ```
 
 ---
 
-## 5. 三階段使用模式
+## 6. 兩種使用模態
+
+| 模態 | 場景 | UI 狀態 | 使用者行為 |
+|------|------|---------|-----------|
+| **會中（即時儀表板）** | 開會中，大螢幕或半邊螢幕 | 三區塊即時更新，不可編輯 | 偶爾瞄一眼，階段性切出來看結論 |
+| **會後（編輯工作區）** | 會議結束後 | 三區塊可編輯，可回饋 | 修正、補充、標記回饋、匯出 |
+
+詳見 [[ui_spec#2. 會議頁（主頁）]]
+
+---
+
+## 7. 三階段進化模式
 
 | 階段 | 觸發者 | 動作 | 涉及模組 | UI 頁面 |
 |------|--------|------|----------|---------|
-| **養庫** | 甲方（透過 Claude） | 從 Obsidian 知識庫提取重點，整理成詞條匯入 | KnowledgeBase | [[ui_spec#3. 詞條管理頁]] |
-| **使用 + 回饋** | 甲方 | 執行 Pipeline，審閱結果，標記校正品質 | 全 Pipeline + FeedbackStore | [[ui_spec#2. 會議頁（主頁）]] |
-| **優化** | 甲方（透過 Claude） | 分析回饋，增補/移除/調整詞條 | FeedbackStore → KnowledgeBase | [[ui_spec#4. 回饋統計頁]] |
+| **養庫** | 甲方（透過 Claude Code） | 從 Obsidian 知識庫提取重點，同步至 App 知識庫 | KnowledgeBase | [[ui_spec#3. 詞條管理頁]] |
+| **使用 + 回饋** | 甲方 | 開會即時使用，會後審閱回饋 | 全 Pipeline + FeedbackStore | [[ui_spec#2. 會議頁（主頁）]] |
+| **優化** | 甲方（透過 Claude Code） | 分析回饋，增補/移除/調整 App 知識庫詞條 | FeedbackStore → KnowledgeBase | [[ui_spec#4. 回饋統計頁]] |
 
 ---
 
-## 6. 前置需求
+## 8. 前置需求
 
 1. **Ollama** — 需預先安裝，用於管理和運行 Gemma 4 模型
 2. **Python 3.11+** — 執行環境
@@ -187,44 +265,47 @@ tags:
 
 ---
 
-## 7. 目錄結構（程式碼）
+## 9. 目錄結構（程式碼）
 
 ```
 AI_PVoiceNote_App/
 ├── app/
 │   ├── __init__.py
-│   ├── main.py                 # Flet app 進入點
+│   ├── main.py                   # Flet app 進入點
 │   ├── ui/
 │   │   ├── __init__.py
-│   │   ├── main_view.py        # 主視窗佈局與導航
-│   │   ├── record_view.py      # 錄音 / 匯入介面
-│   │   ├── session_view.py     # 單次會議審閱介面
-│   │   ├── terms_view.py       # 詞條管理介面
-│   │   ├── feedback_view.py    # 回饋統計介面
-│   │   └── settings_view.py    # 設定頁面
+│   │   ├── main_view.py          # 主視窗佈局與導航
+│   │   ├── dashboard_view.py     # 即時儀表板（會中）+ 編輯工作區（會後）
+│   │   ├── terms_view.py         # 詞條管理介面
+│   │   ├── feedback_view.py      # 回饋統計介面
+│   │   └── settings_view.py      # 設定頁面
 │   ├── core/
 │   │   ├── __init__.py
-│   │   ├── audio_recorder.py   # 麥克風錄音
-│   │   ├── audio_importer.py   # 音檔匯入與格式轉換
-│   │   ├── transcriber.py      # Whisper 語音轉文字
-│   │   ├── knowledge_base.py   # 知識詞條 CRUD + 向量索引
-│   │   ├── rag_corrector.py    # RAG 校正邏輯
-│   │   ├── summarizer.py       # Gemma 4 摘要產生
-│   │   ├── session_manager.py  # 會議 session 生命週期
-│   │   └── exporter.py         # Markdown 匯出
+│   │   ├── audio_recorder.py     # 麥克風錄音（串流輸出）
+│   │   ├── audio_importer.py     # 音檔匯入與切段
+│   │   ├── stream_processor.py   # 串流管線控制器
+│   │   ├── transcriber.py        # Whisper 即時轉錄
+│   │   ├── knowledge_base.py     # App 知識庫（詞條 + 向量索引）
+│   │   ├── rag_corrector.py      # 即時 RAG 校正
+│   │   ├── summarizer.py         # 週期性 Gemma 4 摘要
+│   │   ├── session_manager.py    # 會議生命週期管理
+│   │   └── exporter.py           # Markdown 匯出
 │   ├── data/
 │   │   ├── __init__.py
-│   │   ├── feedback_store.py   # 回饋紀錄讀寫
-│   │   └── config_manager.py   # 設定管理
+│   │   ├── feedback_store.py     # 回饋紀錄讀寫
+│   │   └── config_manager.py     # 設定管理
 │   └── utils/
 │       ├── __init__.py
-│       └── audio_utils.py      # 音訊格式轉換工具
+│       └── audio_utils.py        # 音訊格式工具
 ├── data/
-│   ├── feedback/               # 回饋紀錄（JSON）
-│   └── terms/                  # 知識詞條（YAML）
+│   ├── terms/                    # App 知識庫詞條（YAML）
+│   ├── chroma/                   # ChromaDB 向量索引
+│   ├── sessions/                 # Session 資料（JSON）
+│   ├── feedback/                 # 回饋紀錄（JSON）
+│   └── temp/                     # 音訊暫存
 ├── config/
-│   └── default.yaml            # 預設設定
-├── doc/                        # 文件體系（依開發規範）
+│   └── default.yaml              # 預設設定
+├── doc/                          # 文件體系（依 [[AI協作開發規範]]）
 │   ├── specs/
 │   ├── plans/
 │   ├── history/
@@ -232,8 +313,8 @@ AI_PVoiceNote_App/
 │   ├── reports/
 │   ├── research/
 │   └── archive/
-├── tests/                      # 測試
+├── tests/
 ├── requirements.txt
 ├── pyproject.toml
-└── CLAUDE.md                   # 專案級 Agent 指引
+└── CLAUDE.md
 ```
