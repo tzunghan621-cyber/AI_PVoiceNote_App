@@ -151,11 +151,18 @@ class SummaryResult:
 
 ```python
 @dataclass
+class Participant:
+    name: str                     # 姓名
+    role: str | None              # 職稱/角色（選填）
+    source: str                   # "manual" | "ai_inferred"（手動填入 / Gemma 從逐字稿推斷）
+
+@dataclass
 class Session:
     id: str                       # UUID
     title: str                    # 會議名稱（可由使用者命名，預設為日期時間）
     created: str                  # ISO 8601 timestamp
     ended: str | None             # 錄音結束時間（會中時為 None）
+    participants: list[Participant]  # 與會人員（開始時手動填 + Gemma 推斷補充）
     mode: str                     # "live" | "review"（會中即時 / 會後編輯）
     status: str                   # recording | processing | ready | exported
     audio_paths: list[str]        # WAV 分段暫存路徑（匯出後清空）
@@ -164,10 +171,12 @@ class Session:
     segments: list[CorrectedSegment]     # 校正後逐字稿（即時累積）
     summary_history: list[SummaryResult] # 摘要版本歷史（週期更新累積）
     summary: SummaryResult | None        # 當前最新摘要（= summary_history[-1]）
-    user_edits: UserEdits | None         # 使用者在會後編輯的內容
+    user_edits: UserEdits | None         # 使用者編輯的內容（會中/會後皆可）
     feedback: list[FeedbackEntry] | None # 使用者回饋
     export_path: str | None       # 匯出路徑（匯出後填入）
 ```
+
+> `participants` 可在開始錄音時手動填入，也可由 Gemma 在摘要週期中從逐字稿推斷補充（如出現「John 說...」）。手動填入的不會被 AI 覆蓋。
 
 ### Session 狀態流轉
 
@@ -195,7 +204,9 @@ class Session:
 
 ---
 
-## 5.1 使用者編輯（會後）
+## 5.1 使用者編輯
+
+會中或會後皆可編輯。典型場景：助理在會中即時修正 AI 產出。
 
 ```python
 @dataclass
@@ -205,7 +216,8 @@ class UserEdits:
     edited_at: str                   # ISO 8601
 ```
 
-> 使用者在會後編輯模式中修改的內容獨立存放，不覆蓋 AI 原始產出。匯出時以使用者編輯版本為準，同時保留 AI 原始版本供對照。
+> 使用者編輯的內容獨立存放，不覆蓋 AI 原始產出。匯出時以使用者編輯版本為準，同時保留 AI 原始版本供對照。
+> **會中編輯注意：** 當 Gemma 週期更新摘要時，使用者已編輯的區塊不會被 AI 覆蓋。AI 更新只影響未被使用者手動修改的部分。
 
 ---
 
@@ -247,12 +259,18 @@ class SessionFeedback:
 title: 會議摘要 — {日期} {時間}
 date: {YYYY-MM-DD}
 duration: {HH:MM:SS}
+participants: [{name1}, {name2}, ...]
 source: AI_PVoiceNote_App
 tags:
   - 會議摘要
 ---
 
 # 會議摘要 — {日期} {時間}
+
+## 與會人員
+
+- {name1}（{role1}）
+- {name2}（{role2}）
 
 ## 摘要
 
