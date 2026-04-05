@@ -54,7 +54,7 @@ doc/
 | 層 | 技術 |
 |---|---|
 | 語音轉文字 | faster-whisper small |
-| 摘要推理 | Gemma 4 4B（Ollama） |
+| 摘要推理 | Gemma 4 E4B（Ollama，`gemma4:e4b`） |
 | Embedding | paraphrase-multilingual-MiniLM-L12-v2 |
 | 向量資料庫 | ChromaDB |
 | Desktop UI | Flet |

@@ -322,7 +322,7 @@ whisper:
   device: "cpu"
 
 ollama:
-  model: "gemma4:4b"
+  model: "gemma4:e4b"
   base_url: "http://localhost:11434"
 
 embedding:
