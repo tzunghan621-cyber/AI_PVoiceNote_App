@@ -84,7 +84,7 @@ def _make_mock_summarizer():
             )],
             decisions=[f"決議 {call_count[0]}"], keywords=["key"],
             covered_until=segments[-1].index if segments else 0,
-            model="gemma4:4b", generation_time=0.1, is_final=is_final,
+            model="gemma4:e4b", generation_time=0.1, is_final=is_final,
         )
 
     s.generate = AsyncMock(side_effect=generate)

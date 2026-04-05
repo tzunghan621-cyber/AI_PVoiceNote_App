@@ -18,7 +18,7 @@ def config(tmp_path):
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.dump({
         "ollama": {
-            "model": "gemma4:4b",
+            "model": "gemma4:e4b",
             "base_url": "http://localhost:11434",
         },
     }), encoding="utf-8")
@@ -73,7 +73,7 @@ class TestGenerate:
         assert len(result.action_items) >= 1
         assert result.covered_until == 4
         assert result.is_final is False
-        assert result.model == "gemma4:4b"
+        assert result.model == "gemma4:e4b"
         assert result.generation_time >= 0
 
     @pytest.mark.asyncio
@@ -117,7 +117,7 @@ class TestIncremental:
             version=1, highlights="前次重點",
             action_items=[], decisions=[], keywords=[],
             covered_until=4,  # 前次涵蓋到 index 4
-            model="gemma4:4b", generation_time=1.0, is_final=False,
+            model="gemma4:e4b", generation_time=1.0, is_final=False,
         )
 
         call_args = {}
@@ -180,7 +180,7 @@ class TestFallback:
             version=1, highlights="前次重點",
             action_items=[], decisions=["前次決議"], keywords=["前次"],
             covered_until=2,
-            model="gemma4:4b", generation_time=1.0, is_final=False,
+            model="gemma4:e4b", generation_time=1.0, is_final=False,
         )
 
         with patch.object(summarizer, '_call_ollama', new_callable=AsyncMock,
