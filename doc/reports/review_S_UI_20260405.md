@@ -6,7 +6,7 @@ status: active
 author: 審察者
 phase: S (Code — UI)
 target: Phase 4 (main.py, main_view, dashboard_view, settings_view) + Phase 5 (terms_view, feedback_view)
-verdict: ❌ Fail（條件性，2 Major + 修正後可 Re-review）
+verdict: ✅ Pass（第 2 輪）
 tags:
   - review
   - s-phase
@@ -313,3 +313,98 @@ self.page.run_task(_update_timer)
 - **日期**：2026-04-05
 - **審查輪次**：第 1 次
 - **判定**：❌ Fail — 修正 M-1 + M-2 後 Re-review
+
+---
+---
+
+# 第 2 輪 Re-review（2026-04-05）
+
+> 碼農已修正 M-1（響應式佈局）+ M-2（會中計時器）。
+> 逐項驗證修正是否正確。
+
+---
+
+## 判定：✅ Pass
+
+**理由：** 2 項必須修正全部正確處理。響應式三段斷點使用 `page.on_resized` + `_apply_responsive_layout()` 動態切換，涵蓋 live 和 review 兩種模態。計時器使用 `page.run_task` 啟動 async 定時更新，並在離開 live 模式時正確停止。
+
+---
+
+## 1. M-1 驗證：響應式佈局 — ✅ 通過
+
+### 修正位置
+
+- `dashboard_view.py:354` — `page.on_resized = self._on_page_resized`
+- `dashboard_view.py:631-636` — `_on_page_resized()` 事件處理
+- `dashboard_view.py:637-677` — `_apply_responsive_layout()` 三段斷點邏輯
+- `dashboard_view.py:544` — live 模式呼叫 `_apply_responsive_layout()`
+- `dashboard_view.py:608` — review 模式同樣呼叫
+
+### 逐項驗證
+
+| 檢查項 | 結果 | 說明 |
+|--------|------|------|
+| ≥1400px → 三欄並排 | ✅ | 第 641-649 行：`ft.Row` 三個 `expand=1` Container + VerticalDivider |
+| 960~1399px → 兩欄（逐字稿 + 右側 Tabs） | ✅ | 第 651-665 行：左 transcript + 右 `ft.Tabs(重點/Actions)` |
+| <960px → 單欄分頁 | ✅ | 第 667-677 行：`ft.Tabs(逐字稿/重點/Actions)` |
+| 視窗縮放時動態切換 | ✅ | `page.on_resized` 觸發 `_apply_responsive_layout()` + `_layout_container.update()` |
+| live 和 review 都使用響應式 | ✅ | `_build_live()` 第 544 行、`_build_review()` 第 608 行都呼叫 |
+| 只在 live/review 模式響應 | ✅ | `_on_page_resized` 第 633 行檢查 `self._mode in ("live", "review")` |
+| 面板元件不被重建 | ✅ | 三個 panel 在 `_build_live/_build_review` 建立一次，`_apply_responsive_layout` 只重新排列容器，不重新實例化 panel |
+
+**審查意見：** 使用 `_layout_container` 作為中間容器、`_apply_responsive_layout()` 只更換其 `content`，是正確的策略 — 避免斷點切換時丟失面板狀態（已輸入的逐字稿、使用者編輯等）。Flet 的 `page.on_resized` 在每次視窗大小改變時觸發，可即時切換佈局。
+
+### 與 spec 對照
+
+| ui_spec 要求 | 實作 | 符合 |
+|-------------|------|------|
+| 三欄並排 | `ft.Row([transcript, summary, actions])` | ✅ |
+| 兩欄：逐字稿 + 右側分頁切換 | `ft.Row([transcript, ft.Tabs([重點, Actions])])` | ✅ |
+| 單欄分頁 | `ft.Tabs([逐字稿, 重點, Actions])` | ✅ |
+| 欄寬可拖曳 | ⏸️ 未實作 | 可接受 — Flet 尚無原生 resizable splitter，斷點切換已滿足核心需求 |
+
+---
+
+## 2. M-2 驗證：會中計時器 — ✅ 通過
+
+### 修正位置
+
+- `dashboard_view.py:339` — `self._timer_running = False` 控制旗標
+- `dashboard_view.py:681-696` — `_start_timer()` 啟動 async 定時任務
+- `dashboard_view.py:698-700` — `_stop_timer()` 停止計時器
+- `dashboard_view.py:552` — `_build_live()` 結尾呼叫 `_start_timer()`
+- `dashboard_view.py:362-364` — `set_mode()` 離開 live 時呼叫 `_stop_timer()`
+
+### 逐項驗證
+
+| 檢查項 | 結果 | 說明 |
+|--------|------|------|
+| 開始錄音時啟動 | ✅ | `_build_live()` 最後一行（第 552 行）呼叫 `_start_timer()` |
+| 每秒更新 | ✅ | `_update_timer` 迴圈：計算 elapsed → 格式化 → `_timer_text.update()` → `await asyncio.sleep(1)` |
+| 停止錄音時停止 | ✅ | `set_mode()` 第 363 行：離開 live 時呼叫 `_stop_timer()` 設 `_timer_running = False` |
+| 不阻塞 UI | ✅ | 使用 `page.run_task()` 在 Flet event loop 中執行 async task |
+| 計時器 exception 安全 | ✅ | 第 690-693 行：`_timer_text.update()` 包裹在 `try/except` 中，元件被銷毀時優雅退出 |
+| 使用 `_recording_start` 計算 | ✅ | 第 687 行：`elapsed = (datetime.now() - self._recording_start).total_seconds()` — 即使計時器有短暫延遲也不會累積誤差 |
+
+**審查意見：** 計時器基於 `_recording_start` 的絕對時間差計算，而非累加秒數，這是正確做法 — 即使 `asyncio.sleep(1)` 有微小延遲，顯示的時間仍然精確。`try/except` 防護在 panel 被銷毀（如切換到 idle）時避免 crash。
+
+---
+
+## 3. 總結
+
+| 類別 | 結果 |
+|------|------|
+| M-1（響應式佈局） | ✅ 三段斷點正確實現，live/review 雙模態支持，動態切換 |
+| M-2（會中計時器） | ✅ 啟動/更新/停止生命週期完整，時間計算精確 |
+| 新引入問題 | 無 |
+
+**Phase 4+5 UI 品質確認：** 25 項 spec 項目中 24 項正確實現（欄寬可拖曳為 Flet 框架限制，可接受延後）。響應式佈局 + 計時器補全後，核心 UI 功能完整。可進入 V Phase（驗證）。
+
+---
+
+## 審察者簽章
+
+- **審察者**：CLI-2
+- **日期**：2026-04-05
+- **審查輪次**：第 2 次
+- **判定**：✅ Pass — Phase 4+5 UI 通過，可進入 V Phase
