@@ -86,8 +86,8 @@ tags:
 | **甲方** | 需求方 | 🟢 在線 | 唯一需求來源，最終簽核權 |
 | **大統領** | Director | 🟢 在線 | 主對話 CLI |
 | **研究者** | Researcher | 🟢 已報到 | 已完成競品研究（[[competitive_analysis_20260404]]） |
-| **碼農** | Builder | ⚪ 待報到 | CLI-1 |
-| **審察者** | Reviewer | ⚪ 待報到 | CLI-2 |
+| **碼農** | Builder | 🟢 在線 | CLI-1，執行中：S Phase（Phase 2+3） |
+| **審察者** | Reviewer | 🟢 在線 | CLI-2，已完成 P Phase Review（2 輪） |
 | **實驗者** | Verifier | ⚪ 待報到 | CLI-3 |
 
 ---
@@ -125,3 +125,4 @@ P (Plan) → [Review Gate] → S (Spec/Test) → [Review Gate] → C (Code) → 
 | 2026-04-04 | 初始建立：甲方、大統領、研究者 |
 | 2026-04-05 | 重構為職務表 + 名單分離；補完職務詳述與 P-S-C-V 對應圖 |
 | 2026-04-05 | 甲方命名：碼農（Builder）、審察者（Reviewer）、實驗者（Verifier） |
+| 2026-04-05 | 碼農、審察者報到上線；碼農完成 P Phase + S Phase（Phase 0+1）；審察者完成 P Phase Review（2 輪） |
