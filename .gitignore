@@ -1,6 +1,9 @@
 # Claude Code local settings
 .claude/
 
+# Obsidian
+.obsidian/
+
 # Python
 __pycache__/
 *.pyc
