@@ -1,0 +1,44 @@
+# 模型設定
+whisper:
+  model: "small"
+  language: "zh"
+  device: "cpu"
+
+ollama:
+  model: "gemma4:4b"
+  base_url: "http://localhost:11434"
+
+embedding:
+  model: "paraphrase-multilingual-MiniLM-L12-v2"
+
+# App 知識庫
+knowledge_base:
+  terms_dir: "data/terms"
+  chroma_dir: "data/chroma"
+
+# 串流處理
+streaming:
+  transcribe_chunk_sec: 10
+  audio_chunk_duration_sec: 600
+  summary_interval_sec: 180
+  summary_min_new_segments: 10
+
+# 音訊
+audio:
+  sample_rate: 16000
+  channels: 1
+  temp_dir: "data/temp"
+
+# 匯出
+export:
+  default_dir: ""
+  include_raw_transcript: true
+  include_corrections: true
+
+# 回饋
+feedback:
+  dir: "data/feedback"
+
+# Sessions
+sessions:
+  dir: "data/sessions"
