@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import AsyncIterator, Callable
 
@@ -35,9 +36,9 @@ class StreamProcessor:
         chunk_id = 0
 
         async for audio_chunk in audio_source:
-            # 1. 轉錄
-            new_segments = await self.transcriber.transcribe_chunk(
-                audio_chunk, chunk_id
+            # 1. 轉錄（to_thread 避免 CPU 密集操作阻塞 event loop）
+            new_segments = await asyncio.to_thread(
+                self.transcriber.transcribe_chunk, audio_chunk, chunk_id
             )
             chunk_id += 1
 

@@ -47,7 +47,7 @@ def _make_mock_transcriber():
                               text=f"段落 {idx + 1}", confidence=0.85, chunk_id=chunk_id),
         ]
 
-    t.transcribe_chunk = AsyncMock(side_effect=transcribe_chunk)
+    t.transcribe_chunk = MagicMock(side_effect=transcribe_chunk)  # 同步方法，非 AsyncMock
     return t
 
 
@@ -211,7 +211,7 @@ class TestPeriodicSummary:
                 index=idx, start=0.0, end=5.0,
                 text="test", confidence=0.9, chunk_id=chunk_id,
             )]
-        transcriber.transcribe_chunk = AsyncMock(side_effect=single_seg)
+        transcriber.transcribe_chunk = MagicMock(side_effect=single_seg)  # 同步方法
 
         corrector = _make_mock_corrector()
         summarizer = _make_mock_summarizer()
@@ -242,3 +242,48 @@ class TestSummarizingGuard:
 
         sp = StreamProcessor(transcriber, corrector, summarizer, session_mgr, config)
         assert sp._summarizing is False
+
+
+class TestSyncTranscriberIntegration:
+    """[M-1a] 整合測試：使用真正的同步 Transcriber stub（非 AsyncMock）
+    驗證 asyncio.to_thread 正確包裝同步方法。"""
+
+    @pytest.mark.asyncio
+    async def test_sync_transcriber_with_to_thread(self, config):
+        """真正的同步 transcribe_chunk 應透過 to_thread 正常運作"""
+
+        class SyncTranscriberStub:
+            """模擬真實 Transcriber — 純同步方法"""
+            def __init__(self):
+                self._counter = 0
+
+            def transcribe_chunk(self, audio_data, chunk_id):
+                # CPU 密集操作的模擬（同步）
+                import time
+                time.sleep(0.01)
+                idx = self._counter
+                self._counter += 1
+                return [TranscriptSegment(
+                    index=idx, start=float(idx * 5), end=float(idx * 5 + 5),
+                    text=f"sync segment {idx}", confidence=0.9, chunk_id=chunk_id,
+                )]
+
+        transcriber = SyncTranscriberStub()
+        corrector = _make_mock_corrector()
+        summarizer = _make_mock_summarizer()
+        session_mgr = _make_mock_session_manager()
+
+        sp = StreamProcessor(transcriber, corrector, summarizer, session_mgr, config)
+        session = Session(title="sync test")
+
+        received = []
+        sp.on_segment = lambda seg: received.append(seg)
+
+        await sp.run(_make_audio_source(3), session)
+
+        # 3 chunks × 1 segment/chunk = 3 segments
+        assert len(received) == 3
+        assert all(seg.corrected_text.startswith("sync segment") for seg in received)
+        # 最終摘要應正常產出
+        session_mgr.end_recording.assert_called_once()
+        session_mgr.mark_ready.assert_called_once()
