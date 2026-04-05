@@ -336,6 +336,7 @@ class DashboardView(ft.Container):
         self._mode = "idle"
         self._session: Session | None = None
         self._recording_start: datetime | None = None
+        self._timer_running = False  # [M-2] 計時器控制旗標
 
         # 面板
         self.transcript_panel: TranscriptPanel | None = None
@@ -344,8 +345,13 @@ class DashboardView(ft.Container):
 
         # 頂部列
         self._top_bar: ft.Container | None = None
+        self._bottom_bar: ft.Container | None = None  # review 模式底部操作列
         self._timer_text: ft.Text | None = None
+        self._layout_container = ft.Container(expand=True)  # [M-1] 響應式佈局容器
         self._content = ft.Container(expand=True)
+
+        # [M-1] 監聽視窗大小變化
+        page.on_resized = self._on_page_resized
 
         super().__init__(content=self._content, expand=True, bgcolor=COLOR_BG)
         self._build_idle()
@@ -353,6 +359,9 @@ class DashboardView(ft.Container):
     # ── 狀態切換 ──
 
     def set_mode(self, mode: str, session: Session | None = None):
+        # [M-2] 離開 live 時停止計時器
+        if self._mode == "live" and mode != "live":
+            self._stop_timer()
         self._mode = mode
         self._session = session
         if mode == "idle":
@@ -528,19 +537,19 @@ class DashboardView(ft.Container):
             padding=ft.padding.symmetric(horizontal=15, vertical=8),
         )
 
-        # 三欄佈局
-        three_col = ft.Row([
-            ft.Container(content=self.transcript_panel, expand=1),
-            ft.VerticalDivider(width=1, color=COLOR_SURFACE),
-            ft.Container(content=self.summary_panel, expand=1),
-            ft.VerticalDivider(width=1, color=COLOR_SURFACE),
-            ft.Container(content=self.actions_panel, expand=1),
-        ], expand=True, spacing=0)
+        self._bottom_bar = None
+
+        # [M-1] 響應式佈局
+        self._layout_container = ft.Container(expand=True)
+        self._apply_responsive_layout()
 
         self._content.content = ft.Column([
             self._top_bar,
-            three_col,
+            self._layout_container,
         ], expand=True, spacing=0)
+
+        # [M-2] 啟動計時器
+        self._start_timer()
 
     def _handle_stop(self, e):
         if self._on_stop_recording:
@@ -579,17 +588,8 @@ class DashboardView(ft.Container):
             padding=ft.padding.symmetric(horizontal=15, vertical=8),
         )
 
-        # 三欄佈局
-        three_col = ft.Row([
-            ft.Container(content=self.transcript_panel, expand=1),
-            ft.VerticalDivider(width=1, color=COLOR_SURFACE),
-            ft.Container(content=self.summary_panel, expand=1),
-            ft.VerticalDivider(width=1, color=COLOR_SURFACE),
-            ft.Container(content=self.actions_panel, expand=1),
-        ], expand=True, spacing=0)
-
         # 底部操作
-        bottom_bar = ft.Container(
+        self._bottom_bar = ft.Container(
             content=ft.Row([
                 ft.ElevatedButton("匯出 Markdown", icon=ft.Icons.DOWNLOAD,
                                   on_click=self._handle_export, bgcolor=COLOR_ACCENT, color=COLOR_TEXT),
@@ -603,10 +603,14 @@ class DashboardView(ft.Container):
             padding=ft.padding.symmetric(horizontal=15, vertical=8),
         )
 
+        # [M-1] 響應式佈局
+        self._layout_container = ft.Container(expand=True)
+        self._apply_responsive_layout()
+
         self._content.content = ft.Column([
             self._top_bar,
-            three_col,
-            bottom_bar,
+            self._layout_container,
+            self._bottom_bar,
         ], expand=True, spacing=0)
 
     # ── StreamProcessor 回呼 ──
@@ -621,6 +625,79 @@ class DashboardView(ft.Container):
             self.summary_panel.update_decisions(summary.decisions)
         if self.actions_panel:
             self.actions_panel.merge_with_protection(summary.action_items)
+
+    # ── [M-1] 響應式佈局 ──
+
+    def _on_page_resized(self, e):
+        """監聽視窗大小變化，重新套用佈局"""
+        if self._mode in ("live", "review") and self.transcript_panel:
+            self._apply_responsive_layout()
+            self._layout_container.update()
+
+    def _apply_responsive_layout(self):
+        """依視窗寬度套用三段式斷點佈局（ui_spec#2.3）"""
+        width = self.page.window.width if self.page and self.page.window else 1400
+
+        if width >= 1400:
+            # 寬視窗：三欄並排
+            self._layout_container.content = ft.Row([
+                ft.Container(content=self.transcript_panel, expand=1),
+                ft.VerticalDivider(width=1, color=COLOR_SURFACE),
+                ft.Container(content=self.summary_panel, expand=1),
+                ft.VerticalDivider(width=1, color=COLOR_SURFACE),
+                ft.Container(content=self.actions_panel, expand=1),
+            ], expand=True, spacing=0)
+
+        elif width >= 960:
+            # 中等視窗：逐字稿 + 右側分頁（重點/Actions）
+            right_tabs = ft.Tabs(
+                selected_index=0,
+                tabs=[
+                    ft.Tab(text="💡 重點", content=self.summary_panel),
+                    ft.Tab(text="✅ Actions", content=self.actions_panel),
+                ],
+                expand=True,
+            )
+            self._layout_container.content = ft.Row([
+                ft.Container(content=self.transcript_panel, expand=1),
+                ft.VerticalDivider(width=1, color=COLOR_SURFACE),
+                ft.Container(content=right_tabs, expand=1),
+            ], expand=True, spacing=0)
+
+        else:
+            # 窄視窗：單欄分頁
+            self._layout_container.content = ft.Tabs(
+                selected_index=0,
+                tabs=[
+                    ft.Tab(text="📜 逐字稿", content=self.transcript_panel),
+                    ft.Tab(text="💡 重點", content=self.summary_panel),
+                    ft.Tab(text="✅ Actions", content=self.actions_panel),
+                ],
+                expand=True,
+            )
+
+    # ── [M-2] 會中計時器 ──
+
+    def _start_timer(self):
+        """開始錄音時啟動計時器，每秒更新"""
+        self._timer_running = True
+
+        async def _update_timer():
+            while self._timer_running and self._recording_start:
+                elapsed = (datetime.now() - self._recording_start).total_seconds()
+                if self._timer_text:
+                    self._timer_text.value = self._format_duration(elapsed)
+                    try:
+                        self._timer_text.update()
+                    except Exception:
+                        break
+                await asyncio.sleep(1)
+
+        self.page.run_task(_update_timer)
+
+    def _stop_timer(self):
+        """停止計時器"""
+        self._timer_running = False
 
     # ── 底部操作 ──
 
