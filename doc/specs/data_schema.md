@@ -322,7 +322,10 @@ whisper:
   device: "cpu"
 
 ollama:
-  model: "gemma3:4b"              # 預設輕量模型，可切換：gemma3:1b / gemma4:e2b / gemma4:e4b
+  model: "gemma4:e4b"              # 預設模型，降級方案：gemma4:e2b
+  options:
+    num_ctx: 8192                   # 限制 context 避免 KV Cache 膨脹
+    temperature: 0.3                # 低溫度提升 JSON 穩定性
   base_url: "http://localhost:11434"
 
 embedding:

@@ -38,7 +38,7 @@ tags:
 | 層 | 技術 | 版本/規格 | 備註 |
 |---|---|---|---|
 | 語音轉文字 | faster-whisper | small model | CPU 離線，支援中英文 |
-| 摘要推理 | Gemma 系列（透過 Ollama） | 四層級可切換，設定頁選擇 | 預設 `gemma3:4b`（3.3GB），詳見下方模型選型表 |
+| 摘要推理 | Gemma 4（透過 Ollama） | E4B / E2B 可切換 | 預設 `gemma4:e4b`（9.6GB），降級 `gemma4:e2b`（7.2GB） |
 | Embedding | paraphrase-multilingual-MiniLM-L12-v2 | sentence-transformers | 多語言，適合中文知識庫 |
 | 向量資料庫 | ChromaDB | 嵌入式 | 零設定，Python 原生 |
 | Desktop 框架 | Flet | 基於 Flutter | Python 全端，可打包 .exe |
@@ -48,17 +48,16 @@ tags:
 
 ### 摘要模型選型
 
-設定頁可切換，依硬體條件選擇：
+只使用 Gemma 4 系列。設定頁可切換：
 
-| 層級 | 模型 | Ollama tag | 檔案大小 | 適用硬體 |
-|------|------|-----------|---------|---------|
-| 極輕量 | Gemma 3 1B | `gemma3:1b` | ~1.0 GB | 8GB RAM 舊筆電 |
-| 輕量（預設） | Gemma 3 4B | `gemma3:4b` | ~3.3 GB | 16GB RAM 筆電 |
-| 標準 | Gemma 4 E2B | `gemma4:e2b` | ~7.2 GB | 16GB + 不開其他程式 |
-| 高階 | Gemma 4 E4B | `gemma4:e4b` | ~9.6 GB | ≥32GB RAM 或有 GPU |
+| 層級 | 模型 | Ollama tag | 檔案大小 | 載入 RAM | 適用硬體 |
+|------|------|-----------|---------|---------|---------|
+| 預設 | Gemma 4 E4B | `gemma4:e4b` | 9.6 GB | ~6-7 GB | 16GB RAM 筆電（需限制 context） |
+| 降級 | Gemma 4 E2B | `gemma4:e2b` | 7.2 GB | ~3-4 GB | 記憶體緊繃時降級 |
 
-> 預設為 `gemma3:4b`，確保一般筆電（16GB）舒適運行。品質差異待實測後調整預設值。
-> Gemma 4 E2B/E4B 有原生多模態（音訊 ASR），但本 App 目前僅用文字摘要能力。
+> 預設 `gemma4:e4b`，品質超越 Gemma 3 27B，原生 JSON/function calling。
+> 必須設定 `num_ctx: 8192`，避免 KV Cache 膨脹導致 swap。
+> E2B/E4B 皆有原生音訊 ASR 能力，未來可替代 Whisper（見 [[gemma4_model_analysis_20260406]]）。
 
 ### 硬體基準
 
