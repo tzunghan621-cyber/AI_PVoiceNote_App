@@ -63,8 +63,12 @@ ollama --version
 ### 下載模型
 
 ```bash
-# 下載本專案使用的 Gemma 4 E4B 模型
-ollama pull gemma4:e4b
+# 下載本專案預設模型（Gemma 3 4B，3.3GB）
+ollama pull gemma3:4b
+
+# 若硬體允許，可額外下載更高品質模型
+# ollama pull gemma4:e2b   # 7.2GB，標準
+# ollama pull gemma4:e4b   # 9.6GB，高階
 
 # 查看下載進度（自動顯示）
 # 模型大小約 3GB，首次下載需等待
@@ -240,11 +244,11 @@ netstat -ano | findstr 11434
 ```bash
 # 1. 安裝 Ollama（見 §2）
 
-# 2. 下載模型
-ollama pull gemma4:e4b
+# 2. 下載預設模型
+ollama pull gemma3:4b
 
 # 3. 驗證
-ollama run gemma4:e4b "你好，請用繁體中文回答"
+ollama run gemma3:4b "你好，請用繁體中文回答"
 # 輸入 /bye 離開
 
 # 4. 啟動 App，確認狀態列綠燈
@@ -254,7 +258,7 @@ ollama run gemma4:e4b "你好，請用繁體中文回答"
 
 ```bash
 # Ollama 會自動檢查更新
-ollama pull gemma4:e4b
+ollama pull gemma3:4b
 
 # 若有新版本會自動下載差異部分
 ```
@@ -265,13 +269,14 @@ ollama pull gemma4:e4b
 
 | 模型名稱 | 參數量 | 大小 | 適用場景 |
 |----------|--------|------|---------|
-| `gemma4:e4b` | E4B（4.5B 有效 / 8B 總） | 9.6 GB | **本 App 預設** — CPU 推理可行 |
-| `gemma4:e2b` | E2B（2B 有效 / 5.1B 總） | 7.2 GB | **降級方案** — 記憶體不足時使用 |
-| `gemma4:26b` | 26B MoE | 18 GB | 品質更好，需大量 RAM |
-| `gemma4:31b` | 31B Dense | 20 GB | 最高品質，需 GPU |
+| `gemma3:1b` | Gemma 3 1B | ~1.0 GB | 極輕量 — 8GB RAM 舊筆電 |
+| `gemma3:4b` | Gemma 3 4B | ~3.3 GB | **本 App 預設** — 16GB RAM 筆電舒適運行 |
+| `gemma4:e2b` | E2B（2B 有效 / 5.1B 總） | ~7.2 GB | 標準 — 16GB + 不開其他程式 |
+| `gemma4:e4b` | E4B（4.5B 有效 / 8B 總） | ~9.6 GB | 高階 — ≥32GB RAM 或有 GPU |
+| `gemma4:26b` | 26B MoE | ~18 GB | 品質最好，需大量 RAM |
 
 > 在 `config/default.yaml` 中修改 `ollama.model` 即可切換模型。
-> Surface Pro 9（16GB RAM）預設用 `gemma4:e4b`，跑不動可降級 `gemma4:e2b`。設定頁可切換。
+> Surface Pro 9（16GB RAM）預設用 `gemma3:4b`（3.3GB），需要更高品質可升 `gemma4:e2b`（7.2GB）。設定頁可切換。
 
 ---
 
