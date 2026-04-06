@@ -43,7 +43,7 @@ def _make_session(with_edits=False, with_corrections=True) -> Session:
         version=1, highlights="討論了 Gemma 4 部署方案",
         action_items=action_items, decisions=["採用 Gemma 4 4B"],
         keywords=["Gemma 4", "API"], covered_until=1,
-        model="gemma3:4b", generation_time=3.0, is_final=True,
+        model="gemma4:e4b", generation_time=3.0, is_final=True,
     )
 
     user_edits = None

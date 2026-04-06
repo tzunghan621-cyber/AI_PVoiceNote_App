@@ -49,7 +49,7 @@ def _make_summary(version=1, is_final=False):
             created="2026-04-05T10:00:00", updated="2026-04-05T10:00:00",
         )],
         decisions=[f"決議 {version}"], keywords=["key"],
-        covered_until=version * 5, model="gemma3:4b",
+        covered_until=version * 5, model="gemma4:e4b",
         generation_time=2.0, is_final=is_final,
     )
 

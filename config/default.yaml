@@ -5,8 +5,11 @@ whisper:
   device: "cpu"
 
 ollama:
-  model: "gemma3:4b"
+  model: "gemma4:e4b"
   base_url: "http://localhost:11434"
+  options:
+    num_ctx: 8192
+    temperature: 0.3
 
 embedding:
   model: "paraphrase-multilingual-MiniLM-L12-v2"
