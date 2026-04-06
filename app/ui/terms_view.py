@@ -17,7 +17,7 @@ ORIGIN_ICONS = {"obsidian_sync": "🔗", "manual": "✋", "auto_suggest": "💡"
 
 class TermsView(ft.Container):
     def __init__(self, page: ft.Page, knowledge_base):
-        self.page = page
+        self._page_ref = page
         self.kb = knowledge_base
         self._search_query = ""
         self._filter_category = None
@@ -151,14 +151,14 @@ class TermsView(ft.Container):
                 with open(path, "r", encoding="utf-8") as f:
                     content = f.read()
                 count = self.kb.import_yaml_batch(content)
-                self.page.snack_bar = ft.SnackBar(content=ft.Text(f"已匯入 {count} 筆詞條"))
-                self.page.snack_bar.open = True
-                self.page.update()
+                self._page_ref.snack_bar = ft.SnackBar(content=ft.Text(f"已匯入 {count} 筆詞條"))
+                self._page_ref.snack_bar.open = True
+                self._page_ref.update()
                 self.refresh()
 
         picker = ft.FilePicker(on_result=on_result)
-        self.page.overlay.append(picker)
-        self.page.update()
+        self._page_ref.overlay.append(picker)
+        self._page_ref.update()
         picker.pick_files(dialog_title="匯入 YAML", allowed_extensions=["yaml", "yml"])
 
     def _show_edit_dialog(self, term: dict | None):
@@ -205,18 +205,18 @@ class TermsView(ft.Container):
             else:
                 self.kb.update_term(tid, term_dict)
             dlg.open = False
-            self.page.update()
+            self._page_ref.update()
             self.refresh()
 
         def _delete(ev):
             if term:
                 self.kb.delete_term(term["id"])
             dlg.open = False
-            self.page.update()
+            self._page_ref.update()
             self.refresh()
 
         actions = [
-            ft.TextButton("取消", on_click=lambda e: setattr(dlg, 'open', False) or self.page.update()),
+            ft.TextButton("取消", on_click=lambda e: setattr(dlg, 'open', False) or self._page_ref.update()),
             ft.ElevatedButton("儲存", on_click=_save, bgcolor=COLOR_ACCENT, color=COLOR_TEXT),
         ]
         if not is_new:
@@ -232,6 +232,6 @@ class TermsView(ft.Container):
             ], tight=True, spacing=8, width=400),
             actions=actions,
         )
-        self.page.overlay.append(dlg)
+        self._page_ref.overlay.append(dlg)
         dlg.open = True
-        self.page.update()
+        self._page_ref.update()

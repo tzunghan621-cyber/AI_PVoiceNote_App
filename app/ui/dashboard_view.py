@@ -323,7 +323,7 @@ class DashboardView(ft.Container):
     def __init__(self, page: ft.Page, config, session_manager,
                  knowledge_base=None, feedback_store=None, exporter=None,
                  on_start_recording=None, on_import_audio=None, on_stop_recording=None):
-        self.page = page
+        self._page_ref = page
         self.config = config
         self.session_mgr = session_manager
         self.kb = knowledge_base
@@ -389,7 +389,8 @@ class DashboardView(ft.Container):
                     ),
                     ft.Container(width=20),
                     ft.OutlinedButton(
-                        "📁 匯入音檔", color=COLOR_TEXT,
+                        "📁 匯入音檔",
+                        style=ft.ButtonStyle(color=COLOR_TEXT),
                         on_click=self._handle_import_audio,
                         height=48, width=180,
                     ),
@@ -444,12 +445,12 @@ class DashboardView(ft.Container):
             names = [n.strip() for n in participants_field.value.split(",") if n.strip()]
             participants = [Participant(name=n, source="manual") for n in names]
             dialog.open = False
-            self.page.update()
+            self._page_ref.update()
             on_confirm(title_field.value, participants)
 
         def _on_skip(e):
             dialog.open = False
-            self.page.update()
+            self._page_ref.update()
             on_skip()
 
         dialog = ft.AlertDialog(
@@ -461,9 +462,9 @@ class DashboardView(ft.Container):
                 ft.ElevatedButton("開始", on_click=_on_start),
             ],
         )
-        self.page.overlay.append(dialog)
+        self._page_ref.overlay.append(dialog)
         dialog.open = True
-        self.page.update()
+        self._page_ref.update()
 
     def _handle_start_recording(self, e):
         self._show_meeting_info_dialog(
@@ -481,8 +482,8 @@ class DashboardView(ft.Container):
                 )
 
         picker = ft.FilePicker(on_result=on_result)
-        self.page.overlay.append(picker)
-        self.page.update()
+        self._page_ref.overlay.append(picker)
+        self._page_ref.update()
         picker.pick_files(
             dialog_title="選擇音檔",
             allowed_extensions=["wav", "mp3", "m4a"],
@@ -636,7 +637,7 @@ class DashboardView(ft.Container):
 
     def _apply_responsive_layout(self):
         """依視窗寬度套用三段式斷點佈局（ui_spec#2.3）"""
-        width = self.page.window.width if self.page and self.page.window else 1400
+        width = self._page_ref.window.width if self.page and self._page_ref.window else 1400
 
         if width >= 1400:
             # 寬視窗：三欄並排
@@ -693,7 +694,7 @@ class DashboardView(ft.Container):
                         break
                 await asyncio.sleep(1)
 
-        self.page.run_task(_update_timer)
+        self._page_ref.run_task(_update_timer)
 
     def _stop_timer(self):
         """停止計時器"""
@@ -714,8 +715,8 @@ class DashboardView(ft.Container):
                 self._show_delete_audio_dialog()
 
         picker = ft.FilePicker(on_result=on_result)
-        self.page.overlay.append(picker)
-        self.page.update()
+        self._page_ref.overlay.append(picker)
+        self._page_ref.update()
         picker.save_file(
             dialog_title="匯出 Markdown",
             file_name=f"{self._session.title}.md",
@@ -727,11 +728,11 @@ class DashboardView(ft.Container):
             self.session_mgr.delete_audio(self._session)
             self.session_mgr.save(self._session)
             dlg.open = False
-            self.page.update()
+            self._page_ref.update()
 
         def _keep(e):
             dlg.open = False
-            self.page.update()
+            self._page_ref.update()
 
         dlg = ft.AlertDialog(
             title=ft.Text("匯出完成"),
@@ -741,9 +742,9 @@ class DashboardView(ft.Container):
                 ft.ElevatedButton("刪除", on_click=_delete, bgcolor=COLOR_RED, color=COLOR_TEXT),
             ],
         )
-        self.page.overlay.append(dlg)
+        self._page_ref.overlay.append(dlg)
         dlg.open = True
-        self.page.update()
+        self._page_ref.update()
 
     def _handle_submit_feedback(self, e):
         if not self._session or not self.feedback_store:
@@ -769,20 +770,20 @@ class DashboardView(ft.Container):
                 if path.exists():
                     path.unlink()
             dlg.open = False
-            self.page.update()
+            self._page_ref.update()
             self.set_mode("idle")
 
         dlg = ft.AlertDialog(
             title=ft.Text("確定刪除此會議紀錄？"),
             content=ft.Text("此操作無法復原。"),
             actions=[
-                ft.TextButton("取消", on_click=lambda e: setattr(dlg, 'open', False) or self.page.update()),
+                ft.TextButton("取消", on_click=lambda e: setattr(dlg, 'open', False) or self._page_ref.update()),
                 ft.ElevatedButton("確定", on_click=_confirm, bgcolor=COLOR_RED, color=COLOR_TEXT),
             ],
         )
-        self.page.overlay.append(dlg)
+        self._page_ref.overlay.append(dlg)
         dlg.open = True
-        self.page.update()
+        self._page_ref.update()
 
     def _save_user_edits(self):
         if not self._session:
@@ -797,9 +798,9 @@ class DashboardView(ft.Container):
             self.session_mgr.save_user_edits(self._session, edits)
 
     def _show_snackbar(self, msg: str):
-        self.page.snack_bar = ft.SnackBar(content=ft.Text(msg))
-        self.page.snack_bar.open = True
-        self.page.update()
+        self._page_ref.snack_bar = ft.SnackBar(content=ft.Text(msg))
+        self._page_ref.snack_bar.open = True
+        self._page_ref.update()
 
     # ── 工具 ──
 

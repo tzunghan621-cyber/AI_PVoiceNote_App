@@ -26,7 +26,8 @@ class SettingsView(ft.Container):
             ]),
             self._section("🤖 摘要模型", [
                 self._text_field("Ollama 位址", "ollama.base_url"),
-                self._text_field("模型", "ollama.model"),
+                self._dropdown("模型", ["gemma3:1b", "gemma3:4b", "gemma4:e2b", "gemma4:e4b"],
+                               "ollama.model"),
             ]),
             self._section("⏱️ 串流處理", [
                 self._text_field("摘要更新週期（秒）", "streaming.summary_interval_sec", number=True),
