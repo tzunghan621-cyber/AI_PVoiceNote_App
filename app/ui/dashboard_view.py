@@ -647,47 +647,43 @@ class DashboardView(ft.Container):
 
         elif width >= 960:
             # 中等視窗：逐字稿 + 右側分頁（重點/Actions）
-            right_panels = [self.summary_panel, self.actions_panel]
-            right_slot = ft.Container(content=right_panels[0], expand=True)
-
-            def _on_right_tab_change(e, slot=right_slot, panels=right_panels):
-                slot.content = panels[e.control.selected_index]
-                slot.update()
-
+            right_tab_bar = ft.TabBar(tabs=[
+                ft.Tab(label="💡 重點"),
+                ft.Tab(label="✅ Actions"),
+            ])
+            right_tab_view = ft.TabBarView(controls=[
+                self.summary_panel,
+                self.actions_panel,
+            ], expand=True)
             right_tabs = ft.Tabs(
+                length=2,
                 selected_index=0,
-                tabs=[ft.Tab(label="💡 重點"), ft.Tab(label="✅ Actions")],
-                on_change=_on_right_tab_change,
+                content=ft.Column([right_tab_bar, right_tab_view], expand=True, spacing=0),
+                expand=True,
             )
             self._layout_container.content = ft.Row([
                 ft.Container(content=self.transcript_panel, expand=1),
                 ft.VerticalDivider(width=1, color=COLOR_SURFACE),
-                ft.Container(
-                    content=ft.Column([right_tabs, right_slot], expand=True, spacing=0),
-                    expand=1,
-                ),
+                ft.Container(content=right_tabs, expand=1),
             ], expand=True, spacing=0)
 
         else:
             # 窄視窗：單欄分頁
-            single_panels = [self.transcript_panel, self.summary_panel, self.actions_panel]
-            single_slot = ft.Container(content=single_panels[0], expand=True)
-
-            def _on_single_tab_change(e, slot=single_slot, panels=single_panels):
-                slot.content = panels[e.control.selected_index]
-                slot.update()
-
-            single_tabs = ft.Tabs(
+            single_tab_bar = ft.TabBar(tabs=[
+                ft.Tab(label="📜 逐字稿"),
+                ft.Tab(label="💡 重點"),
+                ft.Tab(label="✅ Actions"),
+            ])
+            single_tab_view = ft.TabBarView(controls=[
+                self.transcript_panel,
+                self.summary_panel,
+                self.actions_panel,
+            ], expand=True)
+            self._layout_container.content = ft.Tabs(
+                length=3,
                 selected_index=0,
-                tabs=[
-                    ft.Tab(label="📜 逐字稿"),
-                    ft.Tab(label="💡 重點"),
-                    ft.Tab(label="✅ Actions"),
-                ],
-                on_change=_on_single_tab_change,
-            )
-            self._layout_container.content = ft.Column(
-                [single_tabs, single_slot], expand=True, spacing=0,
+                content=ft.Column([single_tab_bar, single_tab_view], expand=True, spacing=0),
+                expand=True,
             )
 
     # ── [M-2] 會中計時器 ──
