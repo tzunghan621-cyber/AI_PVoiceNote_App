@@ -144,22 +144,20 @@ class TermsView(ft.Container):
         if term:
             self._show_edit_dialog(term)
 
-    def _on_import(self, e):
-        def on_result(result: ft.FilePickerResultEvent):
-            if result.files:
-                path = result.files[0].path
-                with open(path, "r", encoding="utf-8") as f:
-                    content = f.read()
-                count = self.kb.import_yaml_batch(content)
-                self._page_ref.snack_bar = ft.SnackBar(content=ft.Text(f"已匯入 {count} 筆詞條"))
-                self._page_ref.snack_bar.open = True
-                self._page_ref.update()
-                self.refresh()
-
-        picker = ft.FilePicker(on_result=on_result)
-        self._page_ref.overlay.append(picker)
-        self._page_ref.update()
-        picker.pick_files(dialog_title="匯入 YAML", allowed_extensions=["yaml", "yml"])
+    async def _on_import(self, e):
+        picker = ft.FilePicker()
+        files = await picker.pick_files(
+            dialog_title="匯入 YAML", allowed_extensions=["yaml", "yml"]
+        )
+        if files:
+            path = files[0].path
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read()
+            count = self.kb.import_yaml_batch(content)
+            self._page_ref.snack_bar = ft.SnackBar(content=ft.Text(f"已匯入 {count} 筆詞條"))
+            self._page_ref.snack_bar.open = True
+            self._page_ref.update()
+            self.refresh()
 
     def _show_edit_dialog(self, term: dict | None):
         is_new = term is None

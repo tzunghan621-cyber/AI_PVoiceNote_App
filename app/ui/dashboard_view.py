@@ -472,22 +472,18 @@ class DashboardView(ft.Container):
             on_skip=lambda: self._start(None, [], "microphone"),
         )
 
-    def _handle_import_audio(self, e):
-        def on_result(result: ft.FilePickerResultEvent):
-            if result.files:
-                path = result.files[0].path
-                self._show_meeting_info_dialog(
-                    on_confirm=lambda title, parts: self._start(title, parts, "import", path),
-                    on_skip=lambda: self._start(None, [], "import", path),
-                )
-
-        picker = ft.FilePicker(on_result=on_result)
-        self._page_ref.overlay.append(picker)
-        self._page_ref.update()
-        picker.pick_files(
+    async def _handle_import_audio(self, e):
+        picker = ft.FilePicker()
+        files = await picker.pick_files(
             dialog_title="選擇音檔",
             allowed_extensions=["wav", "mp3", "m4a"],
         )
+        if files:
+            path = files[0].path
+            self._show_meeting_info_dialog(
+                on_confirm=lambda title, parts: self._start(title, parts, "import", path),
+                on_skip=lambda: self._start(None, [], "import", path),
+            )
 
     def _start(self, title, participants, source, file_path=None):
         self._recording_start = datetime.now()
@@ -702,26 +698,22 @@ class DashboardView(ft.Container):
 
     # ── 底部操作 ──
 
-    def _handle_export(self, e):
+    async def _handle_export(self, e):
         if not self._session or not self.exporter:
             return
 
-        def on_result(result: ft.FilePickerResultEvent):
-            if result.path:
-                self._save_user_edits()
-                self.exporter.export(self._session, result.path)
-                self.session_mgr.save(self._session)
-                # 匯出後詢問是否刪除音檔（ui_spec#7）
-                self._show_delete_audio_dialog()
-
-        picker = ft.FilePicker(on_result=on_result)
-        self._page_ref.overlay.append(picker)
-        self._page_ref.update()
-        picker.save_file(
+        picker = ft.FilePicker()
+        path = await picker.save_file(
             dialog_title="匯出 Markdown",
             file_name=f"{self._session.title}.md",
             allowed_extensions=["md"],
         )
+        if path:
+            self._save_user_edits()
+            self.exporter.export(self._session, path)
+            self.session_mgr.save(self._session)
+            # 匯出後詢問是否刪除音檔（ui_spec#7）
+            self._show_delete_audio_dialog()
 
     def _show_delete_audio_dialog(self):
         def _delete(e):
