@@ -38,7 +38,7 @@ tags:
 | 層 | 技術 | 版本/規格 | 備註 |
 |---|---|---|---|
 | 語音轉文字 | faster-whisper | small model | CPU 離線，支援中英文 |
-| 摘要推理 | Gemma 4（透過 Ollama） | E4B / E2B 可切換 | 預設 `gemma4:e4b`（9.6GB），降級 `gemma4:e2b`（7.2GB） |
+| 摘要推理 | Gemma 4（透過 Ollama） | E2B / E4B 可切換 | 預設 `gemma4:e2b`（7.2GB），高階升級 `gemma4:e4b`（9.6GB） |
 | Embedding | paraphrase-multilingual-MiniLM-L12-v2 | sentence-transformers | 多語言，適合中文知識庫 |
 | 向量資料庫 | ChromaDB | 嵌入式 | 零設定，Python 原生 |
 | Desktop 框架 | Flet | 基於 Flutter | Python 全端，可打包 .exe |
@@ -52,10 +52,10 @@ tags:
 
 | 層級 | 模型 | Ollama tag | 檔案大小 | 載入 RAM | 適用硬體 |
 |------|------|-----------|---------|---------|---------|
-| 預設 | Gemma 4 E4B | `gemma4:e4b` | 9.6 GB | ~6-7 GB | 16GB RAM 筆電（需限制 context） |
-| 降級 | Gemma 4 E2B | `gemma4:e2b` | 7.2 GB | ~3-4 GB | 記憶體緊繃時降級 |
+| 預設 | Gemma 4 E2B | `gemma4:e2b` | 7.2 GB | ~3-4 GB | 16GB RAM 筆電（如 Surface Pro 9） |
+| 升級 | Gemma 4 E4B | `gemma4:e4b` | 9.6 GB | ~6-7 GB | 高階筆電（≥32GB RAM 或有 GPU） |
 
-> 預設 `gemma4:e4b`，品質超越 Gemma 3 27B，原生 JSON/function calling。
+> 預設 `gemma4:e2b`，甲方 Surface Pro 9 實測 E4B 跑不動，E4B 改為高階升級選項。
 > 必須設定 `num_ctx: 8192`，避免 KV Cache 膨脹導致 swap。
 > E2B/E4B 皆有原生音訊 ASR 能力，未來可替代 Whisper（見 [[gemma4_model_analysis_20260406]]）。
 

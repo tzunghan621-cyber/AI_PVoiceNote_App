@@ -359,8 +359,8 @@ tags:
 │                                     │
 │  🤖 摘要模型                         │
 │  Ollama 位址：[http://localhost:11434]│
-│  模型：       [gemma4:e4b ▼]         │
-│  可選：gemma4:e4b / gemma4:e2b       │
+│  模型：       [gemma4:e2b ▼]         │
+│  可選：gemma4:e2b / gemma4:e4b       │
 │                                     │
 │  ⏱️ 串流處理                         │
 │  摘要更新週期：[180 秒 ▼]            │
