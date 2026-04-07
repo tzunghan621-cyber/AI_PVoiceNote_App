@@ -70,9 +70,7 @@ def main(page: ft.Page):
                 await processor.run(recorder.start(), session)
             except Exception as e:
                 logger.error(f"Pipeline error: {e}")
-                page.snack_bar = ft.SnackBar(content=ft.Text(f"處理失敗：{e}"))
-                page.snack_bar.open = True
-                page.update()
+                page.show_dialog(ft.SnackBar(content=ft.Text(f"處理失敗：{e}")))
 
         page.run_task(_run)
 
@@ -95,9 +93,7 @@ def main(page: ft.Page):
                 await processor.run(importer.import_file(file_path), session)
             except Exception as e:
                 logger.error(f"Pipeline error: {e}")
-                page.snack_bar = ft.SnackBar(content=ft.Text(f"處理失敗：{e}"))
-                page.snack_bar.open = True
-                page.update()
+                page.show_dialog(ft.SnackBar(content=ft.Text(f"處理失敗：{e}")))
 
         page.run_task(_run)
 
@@ -174,4 +170,4 @@ def main(page: ft.Page):
 
 
 if __name__ == "__main__":
-    ft.app(target=main)
+    ft.run(main)

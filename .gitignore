@@ -26,3 +26,8 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# 真實錄音測試素材（大檔案不入庫）
+tests/fixtures/audio/*
+!tests/fixtures/audio/.gitkeep
+!tests/fixtures/audio/README.md
