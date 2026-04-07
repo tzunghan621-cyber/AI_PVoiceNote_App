@@ -90,7 +90,7 @@ class TestSummaryResult:
             version=2, highlights="重點",
             action_items=[item], decisions=["決議一"],
             keywords=["AI"], covered_until=10,
-            model="gemma4:e4b", generation_time=5.2, is_final=True,
+            model="gemma4:e2b", generation_time=5.2, is_final=True,
         )
         assert sr.is_final is True
         assert len(sr.action_items) == 1
@@ -106,7 +106,7 @@ class TestSummaryResult:
             version=1, highlights="重點",
             action_items=[item], decisions=["決議"],
             keywords=["AI"], covered_until=10,
-            model="gemma4:e4b", generation_time=3.0, is_final=False,
+            model="gemma4:e2b", generation_time=3.0, is_final=False,
         )
         j = to_json(sr)
         restored = from_json(SummaryResult, j)
@@ -207,7 +207,7 @@ class TestSession:
         summary = SummaryResult(
             version=1, highlights="hi", action_items=[item],
             decisions=["d1"], keywords=["k1"], covered_until=5,
-            model="gemma4:e4b", generation_time=2.0, is_final=True,
+            model="gemma4:e2b", generation_time=2.0, is_final=True,
         )
         seg = CorrectedSegment(
             index=0, start=0.0, end=1.0,

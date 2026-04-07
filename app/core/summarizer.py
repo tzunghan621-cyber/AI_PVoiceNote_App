@@ -17,7 +17,7 @@ from app.core.models import (
 
 class Summarizer:
     def __init__(self, config: ConfigManager):
-        self.model = config.get("ollama.model", "gemma4:e4b")
+        self.model = config.get("ollama.model", "gemma4:e2b")
         self.base_url = config.get("ollama.base_url", "http://localhost:11434")
         self.options = config.get("ollama.options", {}) or {}
         self._version = 0

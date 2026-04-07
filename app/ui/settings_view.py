@@ -26,7 +26,7 @@ class SettingsView(ft.Container):
             ]),
             self._section("🤖 摘要模型", [
                 self._text_field("Ollama 位址", "ollama.base_url"),
-                self._dropdown("模型", ["gemma4:e4b", "gemma4:e2b"],
+                self._dropdown("模型", ["gemma4:e2b", "gemma4:e4b"],
                                "ollama.model"),
             ]),
             self._section("⏱️ 串流處理", [

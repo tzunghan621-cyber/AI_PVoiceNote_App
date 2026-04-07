@@ -28,7 +28,7 @@ class StatusBar(ft.Container):
         self.config = config
         self._ollama_status = ft.Text("🔴 Ollama 未連線", size=12, color=COLOR_TEXT_DIM)
         self._model_name = ft.Text(
-            config.get("ollama.model", "gemma4:e4b"), size=12, color=COLOR_TEXT_DIM
+            config.get("ollama.model", "gemma4:e2b"), size=12, color=COLOR_TEXT_DIM
         )
         self._term_count = ft.Text("0 筆詞條", size=12, color=COLOR_TEXT_DIM)
         self._temp_usage = ft.Text("暫存: 0MB", size=12, color=COLOR_TEXT_DIM)
