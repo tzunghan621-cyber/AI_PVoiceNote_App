@@ -66,7 +66,7 @@ class TermsView(ft.Container):
                     ft.Text("來源", size=12, color=COLOR_TEXT_DIM, width=50),
                     ft.Text("命中/成功", size=12, color=COLOR_TEXT_DIM, width=80),
                 ]),
-                padding=ft.padding.symmetric(horizontal=8),
+                padding=ft.Padding(left=8, right=8, top=0, bottom=0),
             ),
             self._terms_list,
             ft.Divider(color=COLOR_SURFACE),
@@ -122,7 +122,7 @@ class TermsView(ft.Container):
                         text_align=ft.TextAlign.CENTER),
             ]),
             on_click=lambda _, tid=term["id"]: self._on_edit(tid),
-            padding=ft.padding.symmetric(horizontal=8, vertical=6),
+            padding=ft.Padding(left=8, right=8, top=6, bottom=6),
             border_radius=4,
             ink=True,
         )
@@ -154,9 +154,7 @@ class TermsView(ft.Container):
             with open(path, "r", encoding="utf-8") as f:
                 content = f.read()
             count = self.kb.import_yaml_batch(content)
-            self._page_ref.snack_bar = ft.SnackBar(content=ft.Text(f"已匯入 {count} 筆詞條"))
-            self._page_ref.snack_bar.open = True
-            self._page_ref.update()
+            self._page_ref.show_dialog(ft.SnackBar(content=ft.Text(f"已匯入 {count} 筆詞條")))
             self.refresh()
 
     def _show_edit_dialog(self, term: dict | None):
@@ -202,19 +200,17 @@ class TermsView(ft.Container):
                 self.kb.add_term(term_dict)
             else:
                 self.kb.update_term(tid, term_dict)
-            dlg.open = False
-            self._page_ref.update()
+            self._page_ref.pop_dialog()
             self.refresh()
 
         def _delete(ev):
             if term:
                 self.kb.delete_term(term["id"])
-            dlg.open = False
-            self._page_ref.update()
+            self._page_ref.pop_dialog()
             self.refresh()
 
         actions = [
-            ft.TextButton("取消", on_click=lambda e: setattr(dlg, 'open', False) or self._page_ref.update()),
+            ft.TextButton("取消", on_click=lambda e: self._page_ref.pop_dialog()),
             ft.ElevatedButton("儲存", on_click=_save, bgcolor=COLOR_ACCENT, color=COLOR_TEXT),
         ]
         if not is_new:
@@ -230,6 +226,4 @@ class TermsView(ft.Container):
             ], tight=True, spacing=8, width=400),
             actions=actions,
         )
-        self._page_ref.overlay.append(dlg)
-        dlg.open = True
-        self._page_ref.update()
+        self._page_ref.show_dialog(dlg)

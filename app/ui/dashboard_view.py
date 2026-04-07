@@ -70,7 +70,7 @@ class TranscriptPanel(ft.Container):
                     ),
                     bgcolor="#3d2e1a",
                     border_radius=4,
-                    padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                    padding=ft.Padding(left=6, right=6, top=2, bottom=2),
                     tooltip=f"校正：{c.original} → {c.corrected}（{c.term_id}）",
                 )
                 if self._editable:
@@ -96,7 +96,7 @@ class TranscriptPanel(ft.Container):
 
         row = ft.Container(
             content=ft.Column(text_parts, spacing=2),
-            padding=ft.padding.symmetric(horizontal=4, vertical=3),
+            padding=ft.Padding(left=4, right=4, top=3, bottom=3),
         )
         self._segments_list.controls.append(row)
         if self._auto_scroll:
@@ -272,7 +272,7 @@ class ActionsPanel(ft.Container):
             content=ft.Text(item.priority, size=10, color=priority_color.get(item.priority, COLOR_TEXT_DIM)),
             bgcolor=COLOR_SURFACE,
             border_radius=4,
-            padding=ft.padding.symmetric(horizontal=6, vertical=1),
+            padding=ft.Padding(left=6, right=6, top=1, bottom=1),
         )
 
         row_controls = [checkbox, ft.Column([content_text, detail], spacing=1, expand=True), priority_chip]
@@ -287,7 +287,7 @@ class ActionsPanel(ft.Container):
             content=ft.Row(row_controls, vertical_alignment=ft.CrossAxisAlignment.START),
             bgcolor=COLOR_SURFACE if item.user_edited else None,
             border_radius=6,
-            padding=ft.padding.symmetric(horizontal=8, vertical=4),
+            padding=ft.Padding(left=8, right=8, top=4, bottom=4),
         )
 
     def _toggle_done(self, item: ActionItem, e):
@@ -351,7 +351,7 @@ class DashboardView(ft.Container):
         self._content = ft.Container(expand=True)
 
         # [M-1] 監聽視窗大小變化
-        page.on_resized = self._on_page_resized
+        page.on_resize = self._on_page_resized
 
         super().__init__(content=self._content, expand=True, bgcolor=COLOR_BG)
         self._build_idle()
@@ -383,7 +383,8 @@ class DashboardView(ft.Container):
             ft.Row(
                 [
                     ft.ElevatedButton(
-                        "🎙️ 開始錄音", color=COLOR_TEXT, bgcolor=COLOR_ACCENT,
+                        "🎙️ 開始錄音",
+                        style=ft.ButtonStyle(color=COLOR_TEXT, bgcolor=COLOR_ACCENT),
                         on_click=self._handle_start_recording,
                         height=48, width=180,
                     ),
@@ -444,13 +445,11 @@ class DashboardView(ft.Container):
         def _on_start(e):
             names = [n.strip() for n in participants_field.value.split(",") if n.strip()]
             participants = [Participant(name=n, source="manual") for n in names]
-            dialog.open = False
-            self._page_ref.update()
+            self._page_ref.pop_dialog()
             on_confirm(title_field.value, participants)
 
         def _on_skip(e):
-            dialog.open = False
-            self._page_ref.update()
+            self._page_ref.pop_dialog()
             on_skip()
 
         dialog = ft.AlertDialog(
@@ -462,9 +461,7 @@ class DashboardView(ft.Container):
                 ft.ElevatedButton("開始", on_click=_on_start),
             ],
         )
-        self._page_ref.overlay.append(dialog)
-        dialog.open = True
-        self._page_ref.update()
+        self._page_ref.show_dialog(dialog)
 
     def _handle_start_recording(self, e):
         self._show_meeting_info_dialog(
@@ -526,12 +523,13 @@ class DashboardView(ft.Container):
                 participants_text,
                 ft.Container(expand=True),
                 ft.ElevatedButton(
-                    "⏹ 停止錄音", bgcolor=COLOR_RED, color=COLOR_TEXT,
+                    "⏹ 停止錄音",
+                    style=ft.ButtonStyle(bgcolor=COLOR_RED, color=COLOR_TEXT),
                     on_click=self._handle_stop,
                 ),
             ], vertical_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
             bgcolor=COLOR_NAV,
-            padding=ft.padding.symmetric(horizontal=15, vertical=8),
+            padding=ft.Padding(left=15, right=15, top=8, bottom=8),
         )
 
         self._bottom_bar = None
@@ -582,22 +580,24 @@ class DashboardView(ft.Container):
                 ft.Text(self._session.title if self._session else "", size=13, color=COLOR_TEXT),
             ], spacing=10),
             bgcolor=COLOR_NAV,
-            padding=ft.padding.symmetric(horizontal=15, vertical=8),
+            padding=ft.Padding(left=15, right=15, top=8, bottom=8),
         )
 
         # 底部操作
         self._bottom_bar = ft.Container(
             content=ft.Row([
                 ft.ElevatedButton("匯出 Markdown", icon=ft.Icons.DOWNLOAD,
-                                  on_click=self._handle_export, bgcolor=COLOR_ACCENT, color=COLOR_TEXT),
+                                  on_click=self._handle_export,
+                                  style=ft.ButtonStyle(bgcolor=COLOR_ACCENT, color=COLOR_TEXT)),
                 ft.OutlinedButton("提交回饋", icon=ft.Icons.FEEDBACK,
                                   on_click=self._handle_submit_feedback),
                 ft.Container(expand=True),
-                ft.OutlinedButton("刪除", icon=ft.Icons.DELETE, icon_color=COLOR_RED,
+                ft.OutlinedButton("刪除", icon=ft.Icons.DELETE,
+                                  style=ft.ButtonStyle(color=COLOR_RED),
                                   on_click=self._handle_delete),
             ], spacing=10),
             bgcolor=COLOR_NAV,
-            padding=ft.padding.symmetric(horizontal=15, vertical=8),
+            padding=ft.Padding(left=15, right=15, top=8, bottom=8),
         )
 
         # [M-1] 響應式佈局
@@ -647,30 +647,47 @@ class DashboardView(ft.Container):
 
         elif width >= 960:
             # 中等視窗：逐字稿 + 右側分頁（重點/Actions）
+            right_panels = [self.summary_panel, self.actions_panel]
+            right_slot = ft.Container(content=right_panels[0], expand=True)
+
+            def _on_right_tab_change(e, slot=right_slot, panels=right_panels):
+                slot.content = panels[e.control.selected_index]
+                slot.update()
+
             right_tabs = ft.Tabs(
                 selected_index=0,
-                tabs=[
-                    ft.Tab(text="💡 重點", content=self.summary_panel),
-                    ft.Tab(text="✅ Actions", content=self.actions_panel),
-                ],
-                expand=True,
+                tabs=[ft.Tab(label="💡 重點"), ft.Tab(label="✅ Actions")],
+                on_change=_on_right_tab_change,
             )
             self._layout_container.content = ft.Row([
                 ft.Container(content=self.transcript_panel, expand=1),
                 ft.VerticalDivider(width=1, color=COLOR_SURFACE),
-                ft.Container(content=right_tabs, expand=1),
+                ft.Container(
+                    content=ft.Column([right_tabs, right_slot], expand=True, spacing=0),
+                    expand=1,
+                ),
             ], expand=True, spacing=0)
 
         else:
             # 窄視窗：單欄分頁
-            self._layout_container.content = ft.Tabs(
+            single_panels = [self.transcript_panel, self.summary_panel, self.actions_panel]
+            single_slot = ft.Container(content=single_panels[0], expand=True)
+
+            def _on_single_tab_change(e, slot=single_slot, panels=single_panels):
+                slot.content = panels[e.control.selected_index]
+                slot.update()
+
+            single_tabs = ft.Tabs(
                 selected_index=0,
                 tabs=[
-                    ft.Tab(text="📜 逐字稿", content=self.transcript_panel),
-                    ft.Tab(text="💡 重點", content=self.summary_panel),
-                    ft.Tab(text="✅ Actions", content=self.actions_panel),
+                    ft.Tab(label="📜 逐字稿"),
+                    ft.Tab(label="💡 重點"),
+                    ft.Tab(label="✅ Actions"),
                 ],
-                expand=True,
+                on_change=_on_single_tab_change,
+            )
+            self._layout_container.content = ft.Column(
+                [single_tabs, single_slot], expand=True, spacing=0,
             )
 
     # ── [M-2] 會中計時器 ──
@@ -719,24 +736,21 @@ class DashboardView(ft.Container):
         def _delete(e):
             self.session_mgr.delete_audio(self._session)
             self.session_mgr.save(self._session)
-            dlg.open = False
-            self._page_ref.update()
+            self._page_ref.pop_dialog()
 
         def _keep(e):
-            dlg.open = False
-            self._page_ref.update()
+            self._page_ref.pop_dialog()
 
         dlg = ft.AlertDialog(
             title=ft.Text("匯出完成"),
             content=ft.Text("是否刪除原始音檔？"),
             actions=[
                 ft.TextButton("保留", on_click=_keep),
-                ft.ElevatedButton("刪除", on_click=_delete, bgcolor=COLOR_RED, color=COLOR_TEXT),
+                ft.ElevatedButton("刪除", on_click=_delete,
+                                  style=ft.ButtonStyle(bgcolor=COLOR_RED, color=COLOR_TEXT)),
             ],
         )
-        self._page_ref.overlay.append(dlg)
-        dlg.open = True
-        self._page_ref.update()
+        self._page_ref.show_dialog(dlg)
 
     def _handle_submit_feedback(self, e):
         if not self._session or not self.feedback_store:
@@ -761,21 +775,19 @@ class DashboardView(ft.Container):
                 path = self.session_mgr.sessions_dir / f"{self._session.id}.json"
                 if path.exists():
                     path.unlink()
-            dlg.open = False
-            self._page_ref.update()
+            self._page_ref.pop_dialog()
             self.set_mode("idle")
 
         dlg = ft.AlertDialog(
             title=ft.Text("確定刪除此會議紀錄？"),
             content=ft.Text("此操作無法復原。"),
             actions=[
-                ft.TextButton("取消", on_click=lambda e: setattr(dlg, 'open', False) or self._page_ref.update()),
-                ft.ElevatedButton("確定", on_click=_confirm, bgcolor=COLOR_RED, color=COLOR_TEXT),
+                ft.TextButton("取消", on_click=lambda e: self._page_ref.pop_dialog()),
+                ft.ElevatedButton("確定", on_click=_confirm,
+                                  style=ft.ButtonStyle(bgcolor=COLOR_RED, color=COLOR_TEXT)),
             ],
         )
-        self._page_ref.overlay.append(dlg)
-        dlg.open = True
-        self._page_ref.update()
+        self._page_ref.show_dialog(dlg)
 
     def _save_user_edits(self):
         if not self._session:
@@ -790,9 +802,7 @@ class DashboardView(ft.Container):
             self.session_mgr.save_user_edits(self._session, edits)
 
     def _show_snackbar(self, msg: str):
-        self._page_ref.snack_bar = ft.SnackBar(content=ft.Text(msg))
-        self._page_ref.snack_bar.open = True
-        self._page_ref.update()
+        self._page_ref.show_dialog(ft.SnackBar(content=ft.Text(msg)))
 
     # ── 工具 ──
 

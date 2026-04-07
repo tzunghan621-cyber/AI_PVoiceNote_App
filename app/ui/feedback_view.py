@@ -76,7 +76,7 @@ class FeedbackView(ft.Container):
             border_radius=8,
             padding=15,
             width=200,
-            alignment=ft.alignment.center,
+            alignment=ft.Alignment.CENTER,
         )
 
     def _build_attention_section(self):

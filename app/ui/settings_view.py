@@ -60,7 +60,7 @@ class SettingsView(ft.Container):
                 ft.Text(title, size=14, weight=ft.FontWeight.BOLD, color=COLOR_TEXT),
                 *controls,
             ], spacing=8),
-            padding=ft.padding.only(top=10, bottom=5),
+            padding=ft.Padding(left=0, right=0, top=10, bottom=5),
         )
 
     def _text_field(self, label: str, config_key: str, number: bool = False) -> ft.TextField:
@@ -114,9 +114,7 @@ class SettingsView(ft.Container):
                 self.config.set(key, val)
         self.config.save()
         if hasattr(self, 'page') and self.page:
-            self.page.snack_bar = ft.SnackBar(content=ft.Text("設定已儲存"))
-            self.page.snack_bar.open = True
-            self.page.update()
+            self.page.show_dialog(ft.SnackBar(content=ft.Text("設定已儲存")))
 
     def _reset(self, e):
         import shutil

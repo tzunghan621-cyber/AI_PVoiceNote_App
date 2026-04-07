@@ -50,7 +50,7 @@ class StatusBar(ft.Container):
                 alignment=ft.MainAxisAlignment.START,
             ),
             bgcolor=COLOR_NAV,
-            padding=ft.padding.symmetric(horizontal=15, vertical=6),
+            padding=ft.Padding(left=15, right=15, top=6, bottom=6),
             height=32,
         )
 
@@ -91,7 +91,7 @@ class MainView:
 
     def __init__(self, config: ConfigManager):
         self.config = config
-        self.page: ft.Page | None = None
+        self._page_ref: ft.Page | None = None
         self.status_bar = StatusBar(config)
         self.content_area = ft.Container(expand=True, bgcolor=COLOR_BG)
         self._views: dict[int, ft.Control] = {}
@@ -104,7 +104,7 @@ class MainView:
         self.settings_view: ft.Control | None = None
 
     def build(self, page: ft.Page):
-        self.page = page
+        self._page_ref = page
         page.title = "語音會議摘要筆記"
         page.theme_mode = ft.ThemeMode.DARK
         page.bgcolor = COLOR_BG
@@ -132,7 +132,7 @@ class MainView:
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             bgcolor=COLOR_NAV,
-            padding=ft.padding.symmetric(horizontal=15, vertical=8),
+            padding=ft.Padding(left=15, right=15, top=8, bottom=8),
             height=48,
         )
 
@@ -201,10 +201,10 @@ class MainView:
         else:
             self.content_area.content = ft.Container(
                 content=ft.Text("載入中...", color=COLOR_TEXT_DIM),
-                alignment=ft.alignment.center,
+                alignment=ft.Alignment.CENTER,
                 expand=True,
             )
 
-        if self.page:
+        if self._page_ref:
             self.content_area.update()
             self.nav_rail.update()
