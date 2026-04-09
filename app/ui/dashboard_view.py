@@ -99,7 +99,7 @@ class TranscriptPanel(ft.Container):
             padding=ft.Padding(left=4, right=4, top=3, bottom=3),
         )
         self._segments_list.controls.append(row)
-        if self._auto_scroll:
+        if self._auto_scroll and self.page:
             self._segments_list.update()
 
     def _on_feedback(self, e):
@@ -121,7 +121,8 @@ class TranscriptPanel(ft.Container):
     def _scroll_to_bottom(self):
         self._auto_scroll = True
         self._segments_list.auto_scroll = True
-        self._segments_list.update()
+        if self.page:
+            self._segments_list.update()
 
     def _format_time(self, seconds: float) -> str:
         m, s = divmod(int(seconds), 60)
@@ -167,13 +168,15 @@ class SummaryPanel(ft.Container):
     def _on_highlights_changed(self, e):
         self._user_edited_highlights = True
         self._highlights_field.color = COLOR_USER_BRIGHT
-        self._highlights_field.update()
+        if self.page:
+            self._highlights_field.update()
 
     def update_highlights(self, text: str):
         if not self._user_edited_highlights:
             self._highlights_field.value = text
             self._highlights_field.color = COLOR_AI_DIM
-            self._highlights_field.update()
+            if self.page:
+                self._highlights_field.update()
 
     def update_decisions(self, decisions: list[str]):
         if not self._user_edited_decisions:
@@ -182,7 +185,8 @@ class SummaryPanel(ft.Container):
                 self._decisions_list.controls.append(
                     ft.Text(f"· {d}", size=13, color=COLOR_AI_DIM)
                 )
-            self._decisions_list.update()
+            if self.page:
+                self._decisions_list.update()
 
     def get_user_edits(self) -> tuple[str | None, list[str] | None]:
         highlights = self._highlights_field.value if self._user_edited_highlights else None
@@ -246,7 +250,8 @@ class ActionsPanel(ft.Container):
         self._items_list.controls.clear()
         for item in self._items:
             self._items_list.controls.append(self._build_item_row(item))
-        self._items_list.update()
+        if self.page:
+            self._items_list.update()
 
     def _build_item_row(self, item: ActionItem) -> ft.Container:
         checkbox = ft.Checkbox(
@@ -370,7 +375,8 @@ class DashboardView(ft.Container):
             self._build_live()
         elif mode == "review":
             self._build_review()
-        self._content.update()
+        if self.page:
+            self._content.update()
 
     # ── idle 狀態（ui_spec#2.1）──
 
@@ -629,7 +635,8 @@ class DashboardView(ft.Container):
         """監聽視窗大小變化，重新套用佈局"""
         if self._mode in ("live", "review") and self.transcript_panel:
             self._apply_responsive_layout()
-            self._layout_container.update()
+            if self.page:
+                self._layout_container.update()
 
     def _apply_responsive_layout(self):
         """依視窗寬度套用三段式斷點佈局（ui_spec#2.3）"""

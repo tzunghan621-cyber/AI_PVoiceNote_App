@@ -264,6 +264,188 @@ def _switch_right_tab(self, idx: int):
 
 ---
 
+## G. 補強研究（2026-04-09）— Lifecycle + Constructor 二輪掃描
+
+> 對應 V Phase 第三輪發現：Bug #6（Dropdown.on_change 不接受）+ Bug #7（Control must be added to the page first）。
+> 第一輪報告（§A~§F）漏掉這兩類問題，本節補齊。
+
+### G1. Lifecycle 變動（最重要的新發現）
+
+Flet 1.0 / 0.84 把控制項生命週期改為**嚴格 mount-aware**：
+
+| 階段 | 是否可呼叫 `.update()` |
+|---|---|
+| `__init__()` 內 | ❌ 會丟 `AssertionError: Control must be added to the page first` |
+| 控制項建立後、加入 page tree 前 | ❌ 同上 |
+| `did_mount()` 觸發後 | ✅ |
+| 任何使用者事件 callback（`on_click` 等） | ✅（事件觸發時控制項一定已 mount） |
+| `before_update()` 內 | ⚠️ 不可呼叫 `update()`（會無限遞迴） |
+
+**正確生命週期模式**：
+```python
+class MyView(ft.Container):
+    def __init__(self, ...):
+        self._content = ft.Column()
+        super().__init__(content=self._content)
+        # ❌ 不要在這裡呼叫 self._content.update() 或 self.refresh()
+        # 只能準備資料、組裝 controls，不能 update
+
+    def did_mount(self):
+        # ✅ 在這裡做首次資料載入 + update
+        self.refresh()
+
+    def refresh(self):
+        # 重組 controls...
+        if self.page:  # 防呆：確認已 mount
+            self._content.update()
+```
+
+舊版 Flet 在 `__init__` 呼叫 `update()` 會被靜默忽略或延遲，所以舊 codebase 大量這樣寫。0.84 之後一律炸。
+
+### G2. 本專案受影響的 `.update()` 呼叫盤點
+
+#### 🔴 P0 — `__init__` 階段直接呼叫 update（保證炸）
+
+| 檔案:行號 | 問題 | 修法 |
+|---|---|---|
+| [feedback_view.py:19, 35](app/ui/feedback_view.py#L19) | `__init__` 末尾呼叫 `self.refresh()`，refresh 內 `self._content.update()` | 移除 `__init__` 內的 `self.refresh()`，改在 `did_mount()` 呼叫 |
+
+#### 🟠 P1 — refresh / build helper 在掛載前可能被呼叫
+
+這些方法本身 OK，但需確認所有呼叫點都在 mount 之後：
+
+| 檔案:行號 | 方法 |
+|---|---|
+| [main_view.py:64, 68, 78, 86](app/ui/main_view.py#L64) | StatusBar `update_*` 系列（會被定時器/事件呼叫，mount 後 OK） |
+| [main_view.py:209, 210](app/ui/main_view.py#L209) | `content_area.update()` / `nav_rail.update()`（在 `select_view` 內，事件觸發 OK） |
+| [terms_view.py:103, 104](app/ui/terms_view.py#L103) | `_terms_list.update()` / `_footer.update()`（refresh 內，需確認首次呼叫時機） |
+| [dashboard_view.py:170, 176, 185, 249](app/ui/dashboard_view.py#L170) | summary/actions panel 的 set_* 方法 |
+| [dashboard_view.py:103, 124](app/ui/dashboard_view.py#L103) | `_segments_list.update()`（add_segment 流程，事件觸發 OK） |
+| [dashboard_view.py:373](app/ui/dashboard_view.py#L373) | `set_mode` 內的 `self._content.update()`（會在 mount 後呼叫 OK） |
+| [dashboard_view.py:632](app/ui/dashboard_view.py#L632) | `_apply_responsive_layout` 內 update |
+| [settings_view.py:130](app/ui/settings_view.py#L130) | `_reset` 內 update（事件觸發 OK） |
+| [main.py:149, 158](app/main.py#L149) | `LazyTermsView.did_mount` 風格的 lazy load → 確認改用 `did_mount()` hook |
+
+**通用防呆模式**：所有 helper 內的 `xxx.update()` 之前加 `if self.page:` 守衛，避免 unmount 後/mount 前呼叫。
+
+#### 🟢 page.update() 呼叫（mount 前後都安全，但要確認 page 不為 None）
+
+[main.py:109, 115, 124](app/main.py#L109) — Pipeline callback 內，執行時 page 必定存在 OK。
+
+### G3. Constructor 變動補強
+
+> 第一輪報告 §A 已列 Tab/Tabs/FilePicker/Buttons/Icon 等。本節補上 V Phase 新踩到的 + 推測會踩的。
+
+#### Dropdown（Bug #6 確認）
+
+| 舊 | 新 |
+|---|---|
+| `Dropdown(on_change=cb)` 用來監聽列表選擇 | `Dropdown(on_select=cb)` |
+| `on_change` | 只在「editable 模式輸入文字」時觸發 |
+| `Dropdown(label_style=...)` | 仍可用，**但要確認 0.84 是否改名**（部分元件 `label_style` → `label_text_style`，見 §A6 Switch） |
+| `ft.dropdown.Option(o)` | 建議改 `ft.DropdownOption(o)`（V1 命名空間扁平化） |
+
+**本專案受影響**：
+- [settings_view.py:80-87](app/ui/settings_view.py#L80) — `_dropdown()` helper，需確認 `label_style` 是否要改 `label_text_style`，並確認沒有依賴 `on_change` 取選擇結果（目前是 `_save` 主動讀 `.value`，**OK**，但若未來加 `on_change` 要記得用 `on_select`）。
+- [terms_view.py:38](app/ui/terms_view.py#L38) — `filter_dd = ft.Dropdown(...)` 同理。
+
+#### Checkbox
+
+| 舊 | 新 |
+|---|---|
+| `Checkbox(is_error=True)` | `Checkbox(error=True)` |
+| `Checkbox(label_style=...)` | **應改為 `label_text_style=`**（與 Switch 同步）|
+
+**本專案受影響**：
+- [settings_view.py:93-96](app/ui/settings_view.py#L93) — `label_style=` 須改 `label_text_style=`
+- [dashboard_view.py:252](app/ui/dashboard_view.py#L252) — Action item checkbox，無 label_style 風險，但要看完整參數
+
+#### Switch
+
+- `Switch(label_style=...)` → `label_text_style=`（§A6 已列；本專案目前未使用 Switch）
+
+#### Slider / Radio / DatePicker
+
+- 本專案目前未使用 Slider、Radio、DatePicker，無受影響行號。
+- 推測同類風險：屬性扁平化（`thumb_color`/`active_color` 可能搬到 `SliderTheme` 或 style 子物件），未來引入時需重查。
+
+#### TextField
+
+- 大致 API 穩定。`TextField(label=, value=, hint_text=, password=, multiline=, max_lines=)` 在 0.84 仍可用。
+- 本專案 TextField 用法（[settings_view.py:68](app/ui/settings_view.py#L68)、[dashboard_view.py:142, 434, 439](app/ui/dashboard_view.py#L142)、[terms_view.py:32, 162-171](app/ui/terms_view.py#L32)）目前未發現破壞性參數，但建議第二輪驗證時實際測試。
+
+### G4. GUI Smoke Test Checklist
+
+> 給碼農修完後自測、給 Verifier 跑 V Phase 第三/四輪用。每項標 ✅/❌/⏭️。
+
+#### S1. 啟動 + 首屏
+- [ ] App 啟動無 exception
+- [ ] StatusBar 顯示（Ollama 狀態 / 模型 / 詞條數 / 暫存）
+- [ ] NavigationRail 四個分頁圖示顯示
+- [ ] 首屏 = Dashboard idle 模式
+
+#### S2. Dashboard idle
+- [ ] 「開始錄音」按鈕渲染（含 style）
+- [ ] 「匯入音檔」按鈕渲染
+- [ ] 歷史紀錄列表渲染（即使為空也不能崩）
+- [ ] 點「歷史紀錄」項目可進入 review 模式
+
+#### S3. Dashboard live（兩欄 / 單欄都要測）
+- [ ] 視窗寬度 1400 → 三欄佈局，無 Tab，三 panel 並排
+- [ ] 視窗寬度 1000 → 兩欄佈局，右側 Tabs（label-only）切換 summary/actions
+- [ ] 視窗寬度 600 → 單欄佈局，三個 Tab 切換
+- [ ] Tab 切換時 content slot 正確替換
+- [ ] 計時器每秒更新
+
+#### S4. 對話框
+- [ ] 「匯入音檔」→ FilePicker 開啟 → 選檔成功
+- [ ] 選檔後彈出「會議資訊」對話框（title/participants 兩個 TextField）
+- [ ] 點「跳過」/「開始」對話框關閉
+- [ ] 進入 live → 結束會議 → 進 review 模式
+- [ ] review 底部「匯出 Markdown」按鈕 → FilePicker 儲存 → 彈出「是否刪除原始音檔」對話框
+- [ ] 點「刪除」確認對話框關閉
+
+#### S5. SnackBar
+- [ ] 任何錯誤訊息（`page.show_dialog(SnackBar(...))`）顯示後自動消失
+- [ ] settings 儲存成功 → SnackBar 顯示「設定已儲存」
+
+#### S6. Terms 分頁
+- [ ] 切到 Terms 分頁無 exception（**這是 lifecycle 雷區**）
+- [ ] 詞條列表渲染
+- [ ] 搜尋 TextField 過濾
+- [ ] 分類 Dropdown 過濾
+- [ ] 點「新增」→ 對話框 → 5 個 TextField → 儲存
+- [ ] 點「編輯」→ 對話框 → 修改 → 儲存
+- [ ] 點「刪除」→ 確認對話框 → 刪除
+- [ ] 「匯入 YAML」FilePicker 流程
+
+#### S7. Feedback 分頁（**Bug #7 主戰場**）
+- [ ] 切到 Feedback 分頁**無 `Control must be added to the page first`**
+- [ ] 整體統計卡片渲染
+- [ ] 「需要關注」區渲染
+- [ ] 「最近 Session」區渲染
+
+#### S8. Settings 分頁
+- [ ] 切到 Settings 無 exception
+- [ ] TextField / Dropdown / Checkbox 都渲染（**Checkbox label_style 雷**）
+- [ ] 改值 → 「儲存」→ SnackBar 提示
+- [ ] 「重設」→ 所有控制項回預設值（**update() 雷**）
+
+#### S9. 響應式
+- [ ] 拖動視窗寬度 → 三欄/兩欄/單欄即時切換（`on_resize` 不能寫成 `on_resized`）
+
+---
+
+## H. 引用來源（補）
+
+- [Flet Discussion #705 — Control must be added to the page first](https://github.com/flet-dev/flet/discussions/705)
+- [Flet Discussion #2567 — AssertionError: Control must be added to the page first](https://github.com/flet-dev/flet/discussions/2567)
+- [Flet Discussion #4693 — User control assertion error](https://github.com/flet-dev/flet/discussions/4693)
+- [Flet Custom Controls 文件（did_mount / will_unmount / before_update）](https://flet.dev/docs/getting-started/custom-controls/)
+- [Flet FastAPI and async API improvements（async lifecycle 棄用 _async 後綴）](https://flet.dev/blog/flet-fastapi-and-async-api-improvements/)
+
+---
+
 ## F. Researcher 結語
 
 Bug Report 列的 4 顆雷只是 V Phase 第一輪踩到的部分。本報告盤點出**至少 28 個行號**需要碼農處理，分散在 6 個檔案。

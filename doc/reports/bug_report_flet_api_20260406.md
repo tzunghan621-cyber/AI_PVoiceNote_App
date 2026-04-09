@@ -5,7 +5,7 @@ updated: 2026-04-08
 type: bug-report
 phase: V (Verify)
 agent: 實驗者（Verifier）
-status: 🔴 阻塞中（Bug #5 待修復）
+status: 🔴 阻塞中（Bug #6 + #7 待修復）
 severity: high
 tags: [bug, flet, api-breakage, v-phase]
 ---
@@ -17,10 +17,15 @@ tags: [bug, flet, api-breakage, v-phase]
 
 ## 摘要
 
-V Phase 驗證期間，連續發現 **5 個** Flet 0.84.0 API 不相容問題：
-- Bug #1~#3：已修復
-- Bug #4：碼農 B 在 commit `46dc141` 全面 migration 中宣稱已處理 Tabs，但實測仍報錯
-- Bug #5：Tabs constructor `tabs=` 參數消失，與 Bug #4 為同一架構重設計的兩個面向
+V Phase 驗證期間，連續發現 **7 個** Flet 0.84.0 API 不相容問題：
+- Bug #1~#3：已修復（V Phase 第一輪）
+- Bug #4 + #5：Tabs/Tab 架構重設計，commit `43932d3` 全面重構修復
+- Bug #6 + #7：第二輪驗證點分頁時觸發，待修
+
+**問題類型彙整：**
+1. **唯讀 property 衝突** — Bug #1
+2. **參數名移除 / constructor 重設計** — Bug #2/#3/#4/#5/#6
+3. **Lifecycle 變嚴格**（unit test 與 import smoke test 都抓不到，只有 GUI 操作才會炸）— Bug #7
 
 > ⚠️ **建議**：請 Researcher 系統性掃過 Flet 0.84.0 升級指南，一次找齊所有不相容處，避免逐個踩雷。
 
@@ -242,6 +247,87 @@ ft.Tabs(   # 應抓到 2 處
 
 ---
 
+## Bug #6：`Dropdown(on_change=...)` 不接受 🔴
+
+| 項目 | 內容 |
+|---|---|
+| 狀態 | 🔴 待修復（V Phase 第二輪發現） |
+| 觸發 | 點左側「詞條」分頁 → `LazyTermsView.build()` 建構 `TermsView` |
+| 檔案 | [[terms_view.py]]:38 |
+| 阻塞 | #9 詞條 CRUD |
+
+### 錯誤訊息
+```
+TypeError: Dropdown.__init__() got an unexpected keyword argument 'on_change'
+```
+
+### 完整 traceback
+```
+File "app/main.py", line 144, in build
+  return TermsView(page, kb)
+File "app/ui/terms_view.py", line 27, in __init__
+  content = self._build()
+File "app/ui/terms_view.py", line 38, in _build
+  filter_dd = ft.Dropdown(
+TypeError: Dropdown.__init__() got an unexpected keyword argument 'on_change'
+```
+
+### 修復方向
+Flet 0.84.0 的 `Dropdown` constructor 移除 `on_change`。需檢查新 API 並改用對應的事件 hook 模式（可能類似 `on_select` 或 listener 註冊）。
+
+---
+
+## Bug #7：`Column(102) Control must be added to the page first` 🔴
+
+| 項目 | 內容 |
+|---|---|
+| 狀態 | 🔴 待修復（V Phase 第二輪發現） |
+| 觸發 | 點左側「回饋」分頁 → `LazyFeedbackView.did_mount()` 建構 `FeedbackView` → `__init__` 內呼叫 `refresh()` → `self._content.update()` |
+| 檔案 | [[feedback_view.py]]:19, 35 |
+| 阻塞 | #9 回饋管理（如有）、影響任何 view 的初始化模式 |
+
+### 錯誤訊息
+```
+RuntimeError: Column(102) Control must be added to the page first
+```
+
+### 完整 traceback
+```
+File "app/main.py", line 157, in did_mount
+  self.content = FeedbackView(kb, feedback_store)
+File "app/ui/feedback_view.py", line 19, in __init__
+  self.refresh()
+File "app/ui/feedback_view.py", line 35, in refresh
+  self._content.update()
+File ".../flet/controls/base_control.py", line 279, in page
+  raise RuntimeError(
+RuntimeError: Column(102) Control must be added to the page first
+```
+
+### 根本原因（重要）
+
+Flet 0.84.0 對 control lifecycle 變嚴格：
+- **舊版**：`__init__` 階段呼叫 `.update()` 會被忽略或延遲執行
+- **新版**：控件未掛載到 page tree 之前呼叫 `.update()` 會拋 RuntimeError
+
+`FeedbackView.__init__` → `self.refresh()` → `self._content.update()` 的流程在 Flet 0.84.0 下會炸。
+
+### 修復方向
+- 把 `__init__` 裡的 `self.refresh()` 移到 `did_mount()`，或
+- `refresh()` 內部判斷 `if self.page is not None: self._content.update()`，或
+- 改用「只設定屬性、不呼叫 `update()`」的方式建構初始狀態，等 mount 後再 update
+
+### ⚠️ 此類 Bug 的特殊危險性
+
+| 偵測手段 | 是否能抓到 |
+|---|---|
+| 單元測試 | ❌（測邏輯，不走 Flet event loop） |
+| Import smoke test | ❌（不會實際 build UI） |
+| GUI 啟動到 idle 頁面 | ❌（idle 不觸發 lazy view） |
+| **GUI 點過所有分頁** | ✅ |
+
+---
+
 ## V Phase 驗證進度
 
 | # | 項目 | 狀態 |
@@ -269,4 +355,20 @@ ft.Tabs(   # 應抓到 2 處
 2. 碼農修改後，**先在本機開 GUI 點過所有功能路徑**，而非只跑 import smoke test 和單元測試
 3. Verifier 在執行 GUI 驗證前，先用 grep 對照 Researcher 的 mapping table 做一次 sanity check
 
-待命中，等 Bug #5 修復後繼續驗證 #2、#5~#10。
+**第三輪結語（驗證 Bug #6 + #7 時）**：commit `43932d3` 修好了 Tabs，但點分頁時 Dropdown 與 lifecycle 又連環炸。明顯沒做基本 GUI smoke test — idle 頁面沒問題不代表所有 view 都沒問題，因為 lazy view 要等實際點到才會建構。
+
+**強烈建議改善流程：**
+1. **每次碼農 commit Flet 相關修改前，必須**：啟動 App → 點過所有左側分頁 → 觸發匯入流程 → 截圖證明
+2. **派 Researcher 補做「Flet 0.84.0 Lifecycle 變動清單」**，掃出所有在 `__init__` 或 build 階段就呼叫 `update()` / `page.update()` 的位置
+3. **建立 GUI smoke test 腳本**（即使是手動 checklist），列出所有需要點過的路徑
+
+```bash
+# Researcher 應補強的 grep 模式
+\.update\(\)              # 找出所有 update 呼叫，特別檢查在 __init__ 內的
+ft\.Dropdown\(            # Bug #6
+ft\.Slider\(              # 推測類似的 constructor 變動
+ft\.Switch\(              # 推測類似的 constructor 變動
+ft\.Checkbox\(            # 推測類似的 constructor 變動
+```
+
+待命中，等 Bug #6 + #7 修復後繼續驗證 #2、#5~#10。

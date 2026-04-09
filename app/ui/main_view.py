@@ -61,11 +61,13 @@ class StatusBar(ft.Container):
             self._ollama_status.value = "🟢 Ollama 已連線"
         else:
             self._ollama_status.value = "🔴 Ollama 未連線"
-        self._ollama_status.update()
+        if self.page:
+            self._ollama_status.update()
 
     def update_term_count(self, count: int):
         self._term_count.value = f"{count} 筆詞條"
-        self._term_count.update()
+        if self.page:
+            self._term_count.update()
 
     def update_temp_usage(self):
         temp_dir = self.config.get("audio.temp_dir", "data/temp")
@@ -75,7 +77,8 @@ class StatusBar(ft.Container):
             self._temp_usage.value = f"暫存: {mb:.0f}MB"
         except Exception:
             self._temp_usage.value = "暫存: --"
-        self._temp_usage.update()
+        if self.page:
+            self._temp_usage.update()
 
     def set_meeting_mode(self, active: bool, last_summary: str = "", next_summary: str = ""):
         if active:
@@ -83,7 +86,8 @@ class StatusBar(ft.Container):
             self._summary_time.value = f"│ 上次摘要: {last_summary} │ 下次: ~{next_summary}"
         else:
             self._summary_time.visible = False
-        self._summary_time.update()
+        if self.page:
+            self._summary_time.update()
 
 
 class MainView:

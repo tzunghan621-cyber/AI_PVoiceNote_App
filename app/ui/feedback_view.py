@@ -16,6 +16,10 @@ class FeedbackView(ft.Container):
         self.feedback_store = feedback_store
         self._content = ft.Column(expand=True, spacing=8, scroll=ft.ScrollMode.AUTO)
         super().__init__(content=self._content, expand=True, bgcolor=COLOR_BG, padding=15)
+        # [Bug #7] 不可在 __init__ 內呼叫 update()；改在 did_mount() 觸發
+
+    def did_mount(self):
+        # Flet 0.84 lifecycle：mount 後才能安全 update
         self.refresh()
 
     def refresh(self):
@@ -32,7 +36,8 @@ class FeedbackView(ft.Container):
         # 最近 Session 回饋
         self._build_recent_sessions()
 
-        self._content.update()
+        if self.page:
+            self._content.update()
 
     def _build_overview(self):
         term_stats = self.feedback_store.get_term_stats()

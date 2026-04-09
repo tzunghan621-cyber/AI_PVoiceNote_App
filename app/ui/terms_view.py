@@ -26,6 +26,9 @@ class TermsView(ft.Container):
 
         content = self._build()
         super().__init__(content=content, expand=True, bgcolor=COLOR_BG, padding=15)
+        # [Bug #7] 不可在 __init__ 內 update；改 did_mount
+
+    def did_mount(self):
         self.refresh()
 
     def _build(self) -> ft.Column:
@@ -43,7 +46,7 @@ class TermsView(ft.Container):
                 ft.dropdown.Option("✋ 手動"),
                 ft.dropdown.Option("💡 自動建議"),
             ],
-            on_change=self._on_filter,
+            on_select=self._on_filter,
             border_color=COLOR_SURFACE, color=COLOR_TEXT, dense=True, width=160,
         )
 
@@ -100,8 +103,9 @@ class TermsView(ft.Container):
         rate = (total_succ / total_corr * 100) if total_corr > 0 else 0
         self._footer.value = f"共 {total} 筆詞條 │ 平均成功率 {rate:.0f}%"
 
-        self._terms_list.update()
-        self._footer.update()
+        if self.page:
+            self._terms_list.update()
+            self._footer.update()
 
     def _build_term_row(self, term: dict) -> ft.Container:
         stats = term.get("stats", {})
