@@ -79,8 +79,11 @@ class AudioRecorder:
             if save_buffer:
                 self._save_temp(np.concatenate(save_buffer), save_chunk_id)
 
-    async def stop(self):
-        """停止錄音"""
+    async def request_stop(self):
+        """軟停止錄音（G5）— 設旗標，start() 的 while 迴圈於下一輪自然退出。
+
+        消費者應 drain generator 而非靠 task.cancel（見 I3 invariant）。
+        """
         self._recording = False
 
     def _buffer_duration(self, buffer: list[np.ndarray]) -> float:

@@ -48,7 +48,7 @@ def _simulate_audio_input(recorder, total_sec: float):
             await recorder._audio_queue.put(data)
             await asyncio.sleep(0.001)
         await asyncio.sleep(0.05)
-        await recorder.stop()
+        await recorder.request_stop()
 
     return _feed
 
@@ -107,8 +107,8 @@ class TestAudioRecorder:
         assert len(paths) >= 1
 
     @pytest.mark.asyncio
-    async def test_stop(self, recorder):
-        """stop 後 generator 結束"""
+    async def test_request_stop(self, recorder):
+        """request_stop 後 generator 結束（軟停止）"""
         feed = _simulate_audio_input(recorder, total_sec=1.0)
 
         chunks = []

@@ -65,6 +65,33 @@ def main(page: ft.Page):
         except Exception:
             logger.exception("Failed to show error SnackBar")
 
+    stop_drain_timeout_sec = config.get("streaming.stop_drain_timeout_sec", 90)
+
+    def _finalize_ui(session: Session):
+        """根據 session.status（SSoT，I5）決定 UI 模態：
+        - ready → review（正常完成路徑，_on_pipeline_done 已走過；此處保險再觸發一次）
+        - aborted：有 segments → review(partial)；無 segments → idle
+        """
+        try:
+            if session.status == "ready":
+                dashboard.set_mode("review", session)
+            elif session.status == "aborted":
+                if session.segments:
+                    dashboard.set_mode("review", session)
+                else:
+                    dashboard.set_mode("idle", None)
+            main_view.status_bar.set_meeting_mode(False)
+            page.update()
+        except Exception:
+            logger.exception("Dashboard finalize UI failed")
+
+    def _persist_session(session: Session):
+        """I1：任何離開 recording/processing 的路徑都必須先落盤"""
+        try:
+            session_mgr.save(session)
+        except Exception:
+            logger.exception("Session save failed (I1 violation risk)")
+
     # Dashboard 回呼
     def on_start_recording(title, participants):
         nonlocal kb, transcriber, corrector, summarizer, processor, recorder, pipeline_task
@@ -82,30 +109,30 @@ def main(page: ft.Page):
         processor.on_status_change = lambda s: _on_pipeline_done(session) if s == "ready" else None
 
         async def _run():
-            # Bug #9 A1+C1: CancelledError 分流 + logger.exception + finally 保證 recorder 停 + UI 回 idle
-            completed_normally = False
+            # I1/I2/I3：正常 → ready；cancel → aborted(stop_timeout)；crash → aborted(pipeline_error)
             try:
                 await processor.run(local_recorder.start(), session)
-                completed_normally = True  # 正常完成 → _on_pipeline_done 已切到 review
+                # sp.run 結束 → session.status 已是 ready（可能含 summary.fallback_reason）
             except asyncio.CancelledError:
-                logger.info("Recording pipeline cancelled by user")
+                logger.info("Recording pipeline cancelled (watchdog / force stop)")
+                if session.status not in ("ready", "aborted"):
+                    session_mgr.mark_aborted(session, "stop_timeout")
                 raise
             except Exception as e:
                 logger.exception("Recording pipeline error")
                 _show_pipeline_error(e, "錄音處理")
+                if session.status not in ("ready", "aborted"):
+                    session_mgr.mark_aborted(session, "pipeline_error")
             finally:
+                # I1：所有路徑先 save（冪等：_on_pipeline_done 可能已存一次）
+                _persist_session(session)
                 try:
-                    await local_recorder.stop()
+                    await local_recorder.request_stop()
                 except Exception:
-                    logger.exception("Recorder stop failed in finally")
-                if not completed_normally:
-                    # 異常或取消 → 錄音 session 資料不完整，回 idle（bug report C1 決策）
-                    try:
-                        dashboard.set_mode("idle", None)
-                        main_view.status_bar.set_meeting_mode(False)
-                        page.update()
-                    except Exception:
-                        logger.exception("Dashboard reset to idle failed")
+                    logger.exception("Recorder request_stop failed in finally")
+                # UI 轉場（ready 由 _on_pipeline_done 負責，aborted 由 _finalize_ui 處理）
+                if session.status != "ready":
+                    _finalize_ui(session)
 
         pipeline_task = page.run_task(_run)
 
@@ -124,39 +151,63 @@ def main(page: ft.Page):
         processor.on_status_change = lambda s: _on_pipeline_done(session) if s == "ready" else None
 
         async def _run():
-            # Bug #9 A3+C1: 匯入路徑同 A1，但異常時進 review（已 yield 的部分 segments 可保留）
-            completed_normally = False
+            # I1：匯入路徑異常也必須先落盤，再 UI 轉場
             try:
                 await processor.run(importer.import_file(file_path), session)
-                completed_normally = True
             except asyncio.CancelledError:
-                logger.info("Import pipeline cancelled by user")
+                logger.info("Import pipeline cancelled")
+                if session.status not in ("ready", "aborted"):
+                    session_mgr.mark_aborted(session, "stop_timeout")
                 raise
             except Exception as e:
                 logger.exception("Import pipeline error")
                 _show_pipeline_error(e, "音檔匯入處理")
+                if session.status not in ("ready", "aborted"):
+                    session_mgr.mark_aborted(session, "pipeline_error")
             finally:
-                if not completed_normally:
-                    try:
-                        dashboard.set_mode("review", session)
-                        main_view.status_bar.set_meeting_mode(False)
-                        page.update()
-                    except Exception:
-                        logger.exception("Dashboard reset to review failed")
+                _persist_session(session)
+                if session.status != "ready":
+                    _finalize_ui(session)
 
         pipeline_task = page.run_task(_run)
 
-    def on_stop_recording():
-        # Bug #9 B1: 先請 recorder 停（讓 generator 自然收尾走 final summary），
-        # 同時 cancel pipeline_task 當作卡死安全網（已 done 時為 no-op）。
+    async def _stop_recording_async():
+        """正常停止路徑（I3）：軟停 recorder → drain pipeline → 超時才 cancel。
+
+        - `pipeline_task.cancel()` 只在 stop_drain_timeout_sec 超時才啟動（安全網）
+        - 超時路徑會由 _run 的 CancelledError 分支 transition 到 aborted + save
+        """
         nonlocal recorder, pipeline_task
-        if recorder:
-            # recorder.stop() 只是設旗標，用 page.run_task 確保跑在 event loop 上
-            page.run_task(recorder.stop)
-        if pipeline_task is not None and not pipeline_task.done():
-            pipeline_task.cancel()
+        if recorder is not None:
+            try:
+                await recorder.request_stop()
+            except Exception:
+                logger.exception("recorder.request_stop failed in on_stop_recording")
+
+        task = pipeline_task
+        if task is None or task.done():
+            return
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=stop_drain_timeout_sec)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Pipeline drain exceeded %ss — forcing cancel (watchdog safety net)",
+                stop_drain_timeout_sec,
+            )
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+        except asyncio.CancelledError:
+            pass
+
+    def on_stop_recording():
+        # Flet 回呼為同步；將軟停 + drain + watchdog 邏輯丟到 event loop
+        page.run_task(_stop_recording_async)
 
     def _on_pipeline_done(session: Session):
+        # I2：save → review → status_bar → page.update（順序固定，避免 race）
         session_mgr.save(session)
         dashboard.set_mode("review", session)
         main_view.status_bar.set_meeting_mode(False)

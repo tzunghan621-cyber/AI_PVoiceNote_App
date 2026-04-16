@@ -27,6 +27,9 @@ class StreamProcessor:
         self.pending_summary_wait_sec = config.get(
             "streaming.pending_summary_wait_sec", 60
         )
+        self.final_summary_timeout_sec = config.get(
+            "streaming.final_summary_timeout_sec", 120
+        )
         self._summarizing = False
         # I4：週期 summary 以 background task 執行，主迴圈不 await
         self._summary_task: asyncio.Task | None = None
@@ -60,16 +63,20 @@ class StreamProcessor:
         finally:
             self._summarizing = False
 
-    async def _drain_pending_summary(self):
-        """等 pending 週期 summary 完成（最多 pending_summary_wait_sec），超時 cancel"""
+    async def _drain_pending_summary(self) -> bool:
+        """等 pending 週期 summary 完成（最多 pending_summary_wait_sec），超時 cancel。
+
+        Returns: True 若 pending summary 被 timeout cancel（供 final fallback 紀錄原因）
+        """
         task = self._summary_task
         if task is None or task.done():
-            return
+            return False
         try:
             await asyncio.wait_for(
                 asyncio.shield(task),
                 timeout=self.pending_summary_wait_sec,
             )
+            return False
         except asyncio.TimeoutError:
             logger.warning(
                 "Pending periodic summary exceeded %ss — cancelling",
@@ -80,6 +87,7 @@ class StreamProcessor:
                 await task
             except (asyncio.CancelledError, Exception):
                 pass
+            return True
 
     async def run(self, audio_source: AsyncIterator[np.ndarray],
                   session: Session):
@@ -122,23 +130,79 @@ class StreamProcessor:
                 segments_since_summary = 0
 
         # 錄音結束：等 pending 週期 summary（最多 pending_summary_wait_sec）後再跑 final
-        await self._drain_pending_summary()
+        pending_cancelled = await self._drain_pending_summary()
 
         # 產生最終摘要
         self.session_mgr.end_recording(session)
         if self.on_status_change:
             self.on_status_change("processing")
 
-        final_summary = await self.summarizer.generate(
-            session.segments,
-            previous_summary=session.summary,
-            participants=session.participants,
-            is_final=True,
-        )
+        # G2：final summary 有 timeout / Ollama 失敗的 fallback（對應 I1 資料保全優先）
+        final_summary = await self._run_final_summary(session, pending_cancelled)
         self.session_mgr.update_summary(session, final_summary)
+        # 不論 fallback 與否皆進 ready（降級而非崩潰 — system_overview §6 原則 2）
         self.session_mgr.mark_ready(session)
 
         if self.on_summary:
             self.on_summary(final_summary)
         if self.on_status_change:
             self.on_status_change("ready")
+
+    async def _run_final_summary(
+        self, session: Session, pending_timeout: bool,
+    ) -> SummaryResult:
+        """final summary 帶 timeout 與 fallback（G2）。
+
+        - timeout → 用最近週期 summary 當 final，標 fallback_reason="ollama_timeout"
+        - Ollama 失敗 → 同上但 fallback_reason="ollama_failure"
+        - 若 pending 週期 summary 超時被 cancel，用 fallback_reason="pending_summary_timeout"
+        - 皆仍 transition 進 ready（對應 system_overview §6 原則 2：降級而非崩潰）
+        """
+        try:
+            return await asyncio.wait_for(
+                self.summarizer.generate(
+                    session.segments,
+                    previous_summary=session.summary,
+                    participants=session.participants,
+                    is_final=True,
+                ),
+                timeout=self.final_summary_timeout_sec,
+            )
+        except asyncio.CancelledError:
+            # main.py watchdog 的 cancel 走這裡 — 讓它傳上去由 _run 處理 aborted
+            raise
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Final summary timed out after %ss — using fallback",
+                self.final_summary_timeout_sec,
+            )
+            return self._build_fallback_final(session, "ollama_timeout")
+        except Exception:
+            logger.exception("Final summary failed — using fallback")
+            reason = "pending_summary_timeout" if pending_timeout else "ollama_failure"
+            return self._build_fallback_final(session, reason)
+
+    def _build_fallback_final(
+        self, session: Session, reason: str,
+    ) -> SummaryResult:
+        """fallback：有最近週期 summary → 複用並標 is_final；無則產空殼 final"""
+        last = session.summary
+        if last is not None:
+            return SummaryResult(
+                version=last.version + 1,
+                highlights=last.highlights,
+                action_items=list(last.action_items),
+                decisions=list(last.decisions),
+                keywords=list(last.keywords),
+                covered_until=last.covered_until,
+                model=last.model,
+                generation_time=0.0,
+                is_final=True,
+                fallback_reason=reason,
+            )
+        return SummaryResult(
+            version=1,
+            highlights="(摘要生成失敗，已保留逐字稿供手動整理)",
+            is_final=True,
+            fallback_reason=reason,
+        )

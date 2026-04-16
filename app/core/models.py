@@ -69,6 +69,9 @@ class SummaryResult:
     model: str = ""
     generation_time: float = 0.0
     is_final: bool = False
+    # system_overview §4.2：final summary timeout / Ollama 失敗時記錄降級原因
+    # e.g. "ollama_timeout" | "ollama_failure" | "pending_summary_timeout"
+    fallback_reason: str | None = None
 
 
 # ── 5. Session ──
@@ -118,8 +121,9 @@ class Session:
     created: str = field(default_factory=lambda: datetime.now().isoformat())
     ended: str | None = None
     participants: list[Participant] = field(default_factory=list)
-    mode: str = "live"  # "live" | "review"
-    status: str = "recording"  # recording | processing | ready | exported
+    # status：SSoT（G4）— 轉換透過 SessionManager.transition 原子化執行
+    status: str = "recording"  # recording | processing | ready | exported | aborted
+    abort_reason: str | None = None  # 僅 status=aborted 時填入（G1）
     audio_paths: list[str] = field(default_factory=list)
     audio_source: str = "microphone"  # "microphone" | "import"
     audio_duration: float = 0.0
@@ -129,6 +133,11 @@ class Session:
     user_edits: UserEdits | None = None
     feedback: list[FeedbackEntry] | None = None
     export_path: str | None = None
+
+    @property
+    def mode(self) -> str:
+        """UI 模態衍生欄位（SSoT = status，對應 data_schema §5 G4 規則）"""
+        return "live" if self.status in ("recording", "processing") else "review"
 
 
 # ── 序列化工具 ──

@@ -61,7 +61,7 @@ def _make_session(with_edits=False, with_corrections=True) -> Session:
             Participant(name="John", role="PM"),
             Participant(name="Mary", role="工程師"),
         ],
-        mode="review", status="ready",
+        status="ready",
         audio_source="microphone", audio_duration=1200.0,
         segments=segments, summary_history=[summary], summary=summary,
         user_edits=user_edits, audio_paths=["/tmp/chunk.wav"],

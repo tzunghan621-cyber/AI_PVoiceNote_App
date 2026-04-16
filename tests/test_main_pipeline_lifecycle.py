@@ -35,117 +35,183 @@ from app.core.models import (
 )
 
 
-async def _recording_run(processor_run, recorder, on_error, on_reset_idle):
-    """main.py on_start_recording._run 的提煉版（移除 Flet 依賴）"""
-    completed_normally = False
-    try:
-        await processor_run()
-        completed_normally = True
-    except asyncio.CancelledError:
-        raise
-    except Exception as e:  # noqa: BLE001
-        on_error(e)
-    finally:
-        await recorder.stop()
-        if not completed_normally:
-            on_reset_idle()
+from app.core.session_manager import SessionManager
 
 
-async def _import_run(processor_run, on_error, on_reset_review):
-    """main.py on_import_audio._run 的提煉版"""
-    completed_normally = False
-    try:
-        await processor_run()
-        completed_normally = True
-    except asyncio.CancelledError:
-        raise
-    except Exception as e:  # noqa: BLE001
-        on_error(e)
-    finally:
-        if not completed_normally:
-            on_reset_review()
+# ─────────────────────────────────────────────────────────────
+# _run 代理（對應 app/main.py 新的 _run 邏輯，I1/I2/I3/I5/I6）
+# 驗證 spec 行為而非 pattern：session.status / save 是否發生 / UI 路由是否正確
+# ─────────────────────────────────────────────────────────────
 
 
 class _FakeRecorder:
     def __init__(self):
-        self.stopped = False
+        self.stop_requested = False
 
-    async def stop(self):
-        self.stopped = True
+    async def request_stop(self):
+        self.stop_requested = True
+
+
+async def _recording_run(
+    processor_run, recorder, session_mgr, session,
+    show_error=None, finalize_ui=None, on_pipeline_done=None,
+):
+    """main.py on_start_recording._run 的提煉版（對應新 _run / I1/I2/I3/I5）"""
+    try:
+        await processor_run()
+        # sp.run 結束 → session.status 已是 ready（可能含 summary.fallback_reason）
+    except asyncio.CancelledError:
+        if session.status not in ("ready", "aborted"):
+            session_mgr.mark_aborted(session, "stop_timeout")
+        raise
+    except Exception as e:
+        if show_error:
+            show_error(e)
+        if session.status not in ("ready", "aborted"):
+            session_mgr.mark_aborted(session, "pipeline_error")
+    finally:
+        # I1：所有路徑先 save，再 UI 轉場
+        session_mgr.save(session)
+        await recorder.request_stop()
+        if session.status == "ready" and on_pipeline_done is not None:
+            on_pipeline_done(session)
+        elif session.status != "ready" and finalize_ui is not None:
+            finalize_ui(session)
+
+
+async def _import_run(
+    processor_run, session_mgr, session,
+    show_error=None, finalize_ui=None, on_pipeline_done=None,
+):
+    """main.py on_import_audio._run 的提煉版（無 recorder，其餘同）"""
+    try:
+        await processor_run()
+    except asyncio.CancelledError:
+        if session.status not in ("ready", "aborted"):
+            session_mgr.mark_aborted(session, "stop_timeout")
+        raise
+    except Exception as e:
+        if show_error:
+            show_error(e)
+        if session.status not in ("ready", "aborted"):
+            session_mgr.mark_aborted(session, "pipeline_error")
+    finally:
+        session_mgr.save(session)
+        if session.status == "ready" and on_pipeline_done is not None:
+            on_pipeline_done(session)
+        elif session.status != "ready" and finalize_ui is not None:
+            finalize_ui(session)
+
+
+@pytest.fixture
+def session_mgr(tmp_path):
+    sessions_dir = tmp_path / "sessions"
+    sessions_dir.mkdir()
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.dump({
+        "sessions": {"dir": str(sessions_dir)},
+    }), encoding="utf-8")
+    return SessionManager(ConfigManager(str(config_path)))
+
+
+# ─────────────────────────────────────────────────────────────
+# Bug #9 regression — 以 spec 為基準重寫（status + save + UI 路由）
+# 避免只驗 pattern（實驗者 V Phase #4 反思）
+# ─────────────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_recording_normal_completion_does_not_reset_ui():
-    """正常完成：不觸發 idle reset（交由 _on_pipeline_done）"""
+async def test_recording_normal_completion_saves_as_ready(session_mgr):
+    """I1+I2：正常完成 → session.status=ready、已落盤、ready 路由走 _on_pipeline_done"""
     recorder = _FakeRecorder()
-    errors, idles = [], []
+    session = session_mgr.create("test", "microphone")
+    done_calls, idles = [], []
 
     async def proc():
-        await asyncio.sleep(0)  # 模擬 await
+        # 模擬 StreamProcessor.run 完成 → session.status=ready
+        session_mgr.end_recording(session)
+        session_mgr.mark_ready(session)
 
     await _recording_run(
-        proc, recorder,
-        on_error=errors.append,
-        on_reset_idle=lambda: idles.append(1),
+        proc, recorder, session_mgr, session,
+        finalize_ui=lambda s: idles.append(s.status),
+        on_pipeline_done=done_calls.append,
     )
 
-    assert errors == []
-    assert idles == []  # 正常完成不應該 reset idle
-    assert recorder.stopped is True  # 但 recorder 仍要停（redundant but safe）
+    assert session.status == "ready"
+    assert session.abort_reason is None
+    # I1：session 實際落盤
+    loaded = session_mgr.load(session.id)
+    assert loaded is not None
+    assert loaded.status == "ready"
+    # ready 路徑走 _on_pipeline_done，不走 finalize_ui
+    assert done_calls == [session]
+    assert idles == []
+    assert recorder.stop_requested is True
 
 
 @pytest.mark.asyncio
-async def test_recording_exception_resets_to_idle_and_stops_recorder():
-    """Bug #9 核心情境：Pipeline 丟例外，finally 必須收尾"""
+async def test_recording_exception_transitions_aborted_with_reason(session_mgr):
+    """I1+G1：pipeline crash → aborted + abort_reason="pipeline_error"，session 落盤"""
     recorder = _FakeRecorder()
-    errors, idles = [], []
+    session = session_mgr.create("test", "microphone")
+    errors, finalize_calls = [], []
 
     async def proc():
         raise RuntimeError("simulated pipeline crash")
 
     await _recording_run(
-        proc, recorder,
-        on_error=errors.append,
-        on_reset_idle=lambda: idles.append(1),
+        proc, recorder, session_mgr, session,
+        show_error=errors.append,
+        finalize_ui=lambda s: finalize_calls.append((s.status, s.abort_reason)),
     )
 
-    assert len(errors) == 1
     assert isinstance(errors[0], RuntimeError)
-    assert idles == [1]  # UI 必須回 idle（避免殭屍）
-    assert recorder.stopped is True  # recorder 必須停
+    assert session.status == "aborted"
+    assert session.abort_reason == "pipeline_error"
+    loaded = session_mgr.load(session.id)
+    assert loaded.status == "aborted"
+    assert loaded.abort_reason == "pipeline_error"
+    assert finalize_calls == [("aborted", "pipeline_error")]
+    assert recorder.stop_requested is True
 
 
 @pytest.mark.asyncio
-async def test_recording_cancelled_propagates_but_finally_runs():
-    """Bug #9 B1：cancel 時 CancelledError 要傳到 task owner，但 finally 必須跑完"""
+async def test_recording_cancel_transitions_aborted_stop_timeout(session_mgr):
+    """I3+G1：cancel（watchdog）→ aborted + abort_reason="stop_timeout"，session 落盤"""
     recorder = _FakeRecorder()
-    errors, idles = [], []
+    session = session_mgr.create("test", "microphone")
+    finalize_calls = []
 
     async def proc():
-        await asyncio.sleep(10)  # 會被 cancel 截斷
+        await asyncio.sleep(10)
 
     async def wrapper():
         await _recording_run(
-            proc, recorder,
-            on_error=errors.append,
-            on_reset_idle=lambda: idles.append(1),
+            proc, recorder, session_mgr, session,
+            finalize_ui=lambda s: finalize_calls.append((s.status, s.abort_reason)),
         )
 
     task = asyncio.create_task(wrapper())
-    await asyncio.sleep(0)  # 讓 task 進入 proc 的 await
+    await asyncio.sleep(0)
     task.cancel()
 
     with pytest.raises(asyncio.CancelledError):
         await task
 
-    assert errors == []  # cancel 不走 except Exception
-    assert idles == [1]  # 但 finally 必須切回 idle
-    assert recorder.stopped is True
+    assert session.status == "aborted"
+    assert session.abort_reason == "stop_timeout"
+    loaded = session_mgr.load(session.id)
+    assert loaded is not None
+    assert loaded.abort_reason == "stop_timeout"
+    assert finalize_calls == [("aborted", "stop_timeout")]
+    assert recorder.stop_requested is True
 
 
 @pytest.mark.asyncio
-async def test_recording_exception_message_non_empty_for_snackbar():
-    """Bug #9 A2：空訊息例外時仍能產生有意義的錯誤文字"""
+async def test_recording_exception_message_non_empty_for_snackbar(session_mgr):
+    """Bug #9 A2：空訊息例外時仍能產生有意義的錯誤文字（與新 save/transition 共存）"""
+    session = session_mgr.create("test", "microphone")
     errors = []
 
     async def proc():
@@ -153,54 +219,59 @@ async def test_recording_exception_message_non_empty_for_snackbar():
 
     recorder = _FakeRecorder()
     await _recording_run(
-        proc, recorder,
-        on_error=errors.append,
-        on_reset_idle=lambda: None,
+        proc, recorder, session_mgr, session,
+        show_error=errors.append,
     )
 
     err = errors[0]
-    # main.py 的 _show_pipeline_error 取用 type(e).__name__ + str(e)
     err_type = type(err).__name__
     err_msg = str(err) or "(無錯誤訊息)"
     shown = f"錄音處理失敗：{err_type} — {err_msg}"
     assert "RuntimeError" in shown
-    assert "(無錯誤訊息)" in shown  # 即使 str(e) 為空，仍能顯示型別與 fallback
+    assert "(無錯誤訊息)" in shown
 
 
 @pytest.mark.asyncio
-async def test_import_exception_resets_to_review_not_idle():
-    """Bug #9 C1：匯入路徑異常時保留部分資料，回 review 而非 idle"""
-    errors, reviews = [], []
+async def test_import_exception_transitions_aborted_and_saves(session_mgr):
+    """匯入路徑異常：I1 仍要 save，aborted+pipeline_error"""
+    session = session_mgr.create("test", "import")
+    errors, finalize_calls = [], []
 
     async def proc():
         raise ValueError("transcriber blew up mid-import")
 
     await _import_run(
-        proc,
-        on_error=errors.append,
-        on_reset_review=lambda: reviews.append(1),
+        proc, session_mgr, session,
+        show_error=errors.append,
+        finalize_ui=lambda s: finalize_calls.append((s.status, s.abort_reason)),
     )
 
-    assert len(errors) == 1
-    assert reviews == [1]
+    assert isinstance(errors[0], ValueError)
+    assert session.status == "aborted"
+    assert session.abort_reason == "pipeline_error"
+    assert session_mgr.load(session.id) is not None
+    assert finalize_calls == [("aborted", "pipeline_error")]
 
 
 @pytest.mark.asyncio
-async def test_import_normal_completion_no_review_reset():
-    """匯入正常完成：交由 _on_pipeline_done，不走 review reset"""
-    errors, reviews = [], []
+async def test_import_normal_completion_saves_as_ready(session_mgr):
+    """匯入正常完成：ready + 走 _on_pipeline_done"""
+    session = session_mgr.create("test", "import")
+    done_calls, finalize_calls = [], []
 
     async def proc():
-        await asyncio.sleep(0)
+        session_mgr.end_recording(session)
+        session_mgr.mark_ready(session)
 
     await _import_run(
-        proc,
-        on_error=errors.append,
-        on_reset_review=lambda: reviews.append(1),
+        proc, session_mgr, session,
+        finalize_ui=finalize_calls.append,
+        on_pipeline_done=done_calls.append,
     )
 
-    assert errors == []
-    assert reviews == []
+    assert session.status == "ready"
+    assert finalize_calls == []
+    assert done_calls == [session]
 
 
 # ─────────────────────────────────────────────────────────────
@@ -439,3 +510,262 @@ async def test_stop_drain_timeout_cancels_pending_summary(tmp_path):
     assert summary_cancelled.is_set(), "pending summary 未被 cancel，drain 逾時未生效"
     # 但 final summary 仍要完成，pipeline 走完 mark_ready
     session_mgr.mark_ready.assert_called_once()
+
+
+# ─────────────────────────────────────────────────────────────
+# Bug #10 — Session lifecycle / stop 語意 / aborted status
+# 對應 [[pipeline_lifecycle_architecture_20260416]] §1 I1/I2/I3/I5/I6 / §2 C1-C4
+# 使用真 SessionManager + 真 StreamProcessor，驗行為結果而非 pattern
+# ─────────────────────────────────────────────────────────────
+
+
+def _bug10_config(tmp_path, **streaming_overrides):
+    sessions_dir = tmp_path / "sessions"
+    sessions_dir.mkdir()
+    config_path = tmp_path / "config.yaml"
+    streaming = {
+        "summary_interval_sec": 0,
+        "summary_min_new_segments": 1,
+        "pending_summary_wait_sec": 5,
+        "final_summary_timeout_sec": 5,
+        "stop_drain_timeout_sec": 5,
+    }
+    streaming.update(streaming_overrides)
+    config_path.write_text(yaml.dump({
+        "streaming": streaming,
+        "sessions": {"dir": str(sessions_dir)},
+    }), encoding="utf-8")
+    return ConfigManager(str(config_path))
+
+
+@pytest.mark.asyncio
+async def test_stop_recording_saves_session_to_disk(tmp_path):
+    """I1：甲方按停止後 data/sessions/{id}.json 必須存在且可 load 回來"""
+    config = _bug10_config(tmp_path)
+    real_session_mgr = SessionManager(config)
+
+    transcriber = _fake_transcriber_one_per_chunk()
+    corrector = _fake_corrector_passthrough()
+
+    summarizer = MagicMock()
+    summarizer.generate = AsyncMock(return_value=_empty_summary(is_final=True))
+
+    sp = StreamProcessor(transcriber, corrector, summarizer, real_session_mgr, config)
+    session = real_session_mgr.create("i1 test", "microphone")
+
+    async def audio_source():
+        for _ in range(3):
+            yield np.zeros(16000, dtype=np.float32)
+            await asyncio.sleep(0.01)
+
+    await sp.run(audio_source(), session)
+    real_session_mgr.save(session)  # 模擬 _on_pipeline_done 的 save
+
+    # I1 核心斷言
+    loaded = real_session_mgr.load(session.id)
+    assert loaded is not None
+    assert loaded.status == "ready"
+    assert loaded.abort_reason is None
+
+
+@pytest.mark.asyncio
+async def test_stop_recording_transitions_to_review_mode(tmp_path):
+    """I2+I5：正常停止 → session.mode=review 由 status 衍生（不走 idle）"""
+    config = _bug10_config(tmp_path)
+    real_session_mgr = SessionManager(config)
+    transcriber = _fake_transcriber_one_per_chunk()
+    corrector = _fake_corrector_passthrough()
+    summarizer = MagicMock()
+    summarizer.generate = AsyncMock(return_value=_empty_summary(is_final=True))
+
+    sp = StreamProcessor(transcriber, corrector, summarizer, real_session_mgr, config)
+    session = real_session_mgr.create("i2 test", "microphone")
+
+    async def audio_source():
+        yield np.zeros(16000, dtype=np.float32)
+        await asyncio.sleep(0.01)
+
+    await sp.run(audio_source(), session)
+
+    assert session.status == "ready"
+    # mode 是 @property，由 status 衍生（不是獨立欄位）
+    assert session.mode == "review"
+
+
+@pytest.mark.asyncio
+async def test_stop_recording_produces_final_summary(tmp_path):
+    """spec L139：停止 → is_final=True 摘要存在 summary_history，session.summary 為 final"""
+    config = _bug10_config(tmp_path)
+    real_session_mgr = SessionManager(config)
+    transcriber = _fake_transcriber_one_per_chunk()
+    corrector = _fake_corrector_passthrough()
+
+    summarizer = MagicMock()
+    summarizer.generate = AsyncMock(return_value=_empty_summary(version=1, is_final=True))
+
+    sp = StreamProcessor(transcriber, corrector, summarizer, real_session_mgr, config)
+    session = real_session_mgr.create("final test", "microphone")
+
+    async def audio_source():
+        yield np.zeros(16000, dtype=np.float32)
+        await asyncio.sleep(0.01)
+
+    await sp.run(audio_source(), session)
+
+    assert session.summary is not None
+    assert session.summary.is_final is True
+    assert any(s.is_final for s in session.summary_history)
+
+
+@pytest.mark.asyncio
+async def test_final_summary_timeout_falls_back_to_ready_not_aborted(tmp_path):
+    """G2：final summary timeout → 用最近週期版當 final + fallback_reason，仍進 ready（不 aborted）"""
+    config = _bug10_config(tmp_path, final_summary_timeout_sec=0)  # 立即 timeout
+    real_session_mgr = SessionManager(config)
+    transcriber = _fake_transcriber_one_per_chunk()
+    corrector = _fake_corrector_passthrough()
+
+    # 先預設一個週期 summary（fake：第一次非 final 回傳正常；第二次 final 卡到 timeout）
+    summarizer = MagicMock()
+
+    async def generate(segments, previous_summary=None, participants=None, is_final=False):
+        if is_final:
+            await asyncio.sleep(10)  # 超過 final_summary_timeout_sec=0
+        return _empty_summary(version=1, is_final=False)
+
+    summarizer.generate = AsyncMock(side_effect=generate)
+
+    sp = StreamProcessor(transcriber, corrector, summarizer, real_session_mgr, config)
+    session = real_session_mgr.create("g2 test", "microphone")
+
+    async def audio_source():
+        # 多個 chunks，讓週期 summary 有機會先完成一次
+        for _ in range(3):
+            yield np.zeros(16000, dtype=np.float32)
+            await asyncio.sleep(0.02)
+
+    await sp.run(audio_source(), session)
+
+    # status 仍 ready（降級而非崩潰）
+    assert session.status == "ready"
+    # final summary 標了 fallback_reason
+    assert session.summary is not None
+    assert session.summary.is_final is True
+    assert session.summary.fallback_reason == "ollama_timeout"
+
+
+@pytest.mark.asyncio
+async def test_pipeline_crash_transitions_aborted_and_saves(tmp_path):
+    """I1+C3+G1：pipeline 主迴圈 crash → session 被 main.py _run 轉 aborted 並落盤"""
+    config = _bug10_config(tmp_path)
+    real_session_mgr = SessionManager(config)
+    session = real_session_mgr.create("crash test", "microphone")
+
+    # 先塞幾個 segments 進 session，證明「partial 也要保」
+    from app.core.models import CorrectedSegment
+    for i in range(5):
+        real_session_mgr.add_segment(session, CorrectedSegment(
+            index=i, start=float(i), end=float(i + 1),
+            original_text=f"s{i}", corrected_text=f"s{i}", corrections=[],
+        ))
+
+    recorder = _FakeRecorder()
+
+    async def proc_that_crashes():
+        raise RuntimeError("transcriber died")
+
+    errors, finalize_calls = [], []
+    await _recording_run(
+        proc_that_crashes, recorder, real_session_mgr, session,
+        show_error=errors.append,
+        finalize_ui=finalize_calls.append,
+    )
+
+    # I1：落盤
+    loaded = real_session_mgr.load(session.id)
+    assert loaded is not None
+    assert loaded.status == "aborted"
+    assert loaded.abort_reason == "pipeline_error"
+    # 原本已處理的 segments 保留
+    assert len(loaded.segments) == 5
+    # UI 應以 status 驅動轉 review（有 segments）
+    assert session.status == "aborted"
+
+
+@pytest.mark.asyncio
+async def test_stop_timeout_transitions_aborted_stop_timeout_and_saves(tmp_path):
+    """I3+T8+G1：stop drain 超時 cancel → aborted + abort_reason=stop_timeout，save 已處理 segments"""
+    config = _bug10_config(tmp_path)
+    real_session_mgr = SessionManager(config)
+    session = real_session_mgr.create("timeout test", "microphone")
+
+    from app.core.models import CorrectedSegment
+    for i in range(3):
+        real_session_mgr.add_segment(session, CorrectedSegment(
+            index=i, start=float(i), end=float(i + 1),
+            original_text=f"s{i}", corrected_text=f"s{i}", corrections=[],
+        ))
+
+    recorder = _FakeRecorder()
+
+    async def hung_proc():
+        await asyncio.sleep(10)
+
+    async def wrapper():
+        await _recording_run(
+            hung_proc, recorder, real_session_mgr, session,
+        )
+
+    task = asyncio.create_task(wrapper())
+    await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    loaded = real_session_mgr.load(session.id)
+    assert loaded.status == "aborted"
+    assert loaded.abort_reason == "stop_timeout"
+    assert len(loaded.segments) == 3  # partial 不丟
+
+
+@pytest.mark.asyncio
+async def test_session_mode_is_derived_from_status(tmp_path):
+    """I5+G4：Session.mode 是 @property，狀態變化即時反映"""
+    config = _bug10_config(tmp_path)
+    mgr = SessionManager(config)
+    session = mgr.create("mode test", "microphone")
+
+    assert session.status == "recording"
+    assert session.mode == "live"
+
+    mgr.end_recording(session)
+    assert session.status == "processing"
+    assert session.mode == "live"  # processing 仍為 live
+
+    mgr.mark_ready(session)
+    assert session.status == "ready"
+    assert session.mode == "review"
+
+    # aborted 也應是 review（部分資料可審閱）
+    session2 = mgr.create("mode test 2", "microphone")
+    mgr.mark_aborted(session2, "pipeline_error")
+    assert session2.status == "aborted"
+    assert session2.mode == "review"
+
+
+@pytest.mark.asyncio
+async def test_transition_rejects_invalid_status_and_requires_abort_reason(tmp_path):
+    """I6：transition 拒絕不合法 status；aborted 必須帶 abort_reason"""
+    config = _bug10_config(tmp_path)
+    mgr = SessionManager(config)
+    session = mgr.create("transition test", "microphone")
+
+    with pytest.raises(ValueError):
+        mgr.transition(session, "nonsense_status")
+
+    with pytest.raises(ValueError):
+        mgr.transition(session, "aborted")  # 少 abort_reason
+
+    # 正常帶 reason 應成功
+    mgr.transition(session, "aborted", abort_reason="stop_timeout")
+    assert session.abort_reason == "stop_timeout"
