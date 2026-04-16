@@ -25,6 +25,9 @@ streaming:
   audio_chunk_duration_sec: 600
   summary_interval_sec: 180
   summary_min_new_segments: 10
+  final_summary_timeout_sec: 120
+  stop_drain_timeout_sec: 90
+  pending_summary_wait_sec: 60
 
 # 音訊
 audio:
