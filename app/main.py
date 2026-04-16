@@ -46,19 +46,35 @@ def main(page: ft.Page):
     summarizer: Summarizer | None = None
     processor: StreamProcessor | None = None
     recorder: AudioRecorder | None = None
+    pipeline_task: asyncio.Task | None = None  # Bug #9: 保留 _run handle 供 stop 取消
 
     # ── UI 建構 ──
     main_view = MainView(config)
 
+    def _show_pipeline_error(err: BaseException, origin: str):
+        """彈出使用者可見的 Pipeline 錯誤提示（Bug #9 A2：訊息保證非空 + 長停留）"""
+        err_type = type(err).__name__
+        err_msg = str(err) or "(無錯誤訊息)"
+        text = f"{origin}失敗：{err_type} — {err_msg}"
+        try:
+            page.show_dialog(ft.SnackBar(
+                content=ft.Text(text),
+                duration=30000,  # 30 秒，避免甲方錯過
+            ))
+            page.update()
+        except Exception:
+            logger.exception("Failed to show error SnackBar")
+
     # Dashboard 回呼
     def on_start_recording(title, participants):
-        nonlocal kb, transcriber, corrector, summarizer, processor, recorder
+        nonlocal kb, transcriber, corrector, summarizer, processor, recorder, pipeline_task
         _ensure_ml_modules()
 
         session = session_mgr.create(title, "microphone", participants)
         dashboard.set_mode("live", session)
 
         recorder = AudioRecorder(config)
+        local_recorder = recorder  # finally 區塊用，避免 nonlocal 在過程中被覆蓋
 
         processor = StreamProcessor(transcriber, corrector, summarizer, session_mgr, config)
         processor.on_segment = dashboard.on_new_segment
@@ -66,16 +82,35 @@ def main(page: ft.Page):
         processor.on_status_change = lambda s: _on_pipeline_done(session) if s == "ready" else None
 
         async def _run():
+            # Bug #9 A1+C1: CancelledError 分流 + logger.exception + finally 保證 recorder 停 + UI 回 idle
+            completed_normally = False
             try:
-                await processor.run(recorder.start(), session)
+                await processor.run(local_recorder.start(), session)
+                completed_normally = True  # 正常完成 → _on_pipeline_done 已切到 review
+            except asyncio.CancelledError:
+                logger.info("Recording pipeline cancelled by user")
+                raise
             except Exception as e:
-                logger.error(f"Pipeline error: {e}")
-                page.show_dialog(ft.SnackBar(content=ft.Text(f"處理失敗：{e}")))
+                logger.exception("Recording pipeline error")
+                _show_pipeline_error(e, "錄音處理")
+            finally:
+                try:
+                    await local_recorder.stop()
+                except Exception:
+                    logger.exception("Recorder stop failed in finally")
+                if not completed_normally:
+                    # 異常或取消 → 錄音 session 資料不完整，回 idle（bug report C1 決策）
+                    try:
+                        dashboard.set_mode("idle", None)
+                        main_view.status_bar.set_meeting_mode(False)
+                        page.update()
+                    except Exception:
+                        logger.exception("Dashboard reset to idle failed")
 
-        page.run_task(_run)
+        pipeline_task = page.run_task(_run)
 
     def on_import_audio(title, participants, file_path):
-        nonlocal kb, transcriber, corrector, summarizer, processor
+        nonlocal kb, transcriber, corrector, summarizer, processor, pipeline_task
         _ensure_ml_modules()
 
         session = session_mgr.create(title, "import", participants)
@@ -89,19 +124,37 @@ def main(page: ft.Page):
         processor.on_status_change = lambda s: _on_pipeline_done(session) if s == "ready" else None
 
         async def _run():
+            # Bug #9 A3+C1: 匯入路徑同 A1，但異常時進 review（已 yield 的部分 segments 可保留）
+            completed_normally = False
             try:
                 await processor.run(importer.import_file(file_path), session)
+                completed_normally = True
+            except asyncio.CancelledError:
+                logger.info("Import pipeline cancelled by user")
+                raise
             except Exception as e:
-                logger.error(f"Pipeline error: {e}")
-                page.show_dialog(ft.SnackBar(content=ft.Text(f"處理失敗：{e}")))
+                logger.exception("Import pipeline error")
+                _show_pipeline_error(e, "音檔匯入處理")
+            finally:
+                if not completed_normally:
+                    try:
+                        dashboard.set_mode("review", session)
+                        main_view.status_bar.set_meeting_mode(False)
+                        page.update()
+                    except Exception:
+                        logger.exception("Dashboard reset to review failed")
 
-        page.run_task(_run)
+        pipeline_task = page.run_task(_run)
 
     def on_stop_recording():
-        nonlocal recorder
+        # Bug #9 B1: 先請 recorder 停（讓 generator 自然收尾走 final summary），
+        # 同時 cancel pipeline_task 當作卡死安全網（已 done 時為 no-op）。
+        nonlocal recorder, pipeline_task
         if recorder:
             # recorder.stop() 只是設旗標，用 page.run_task 確保跑在 event loop 上
             page.run_task(recorder.stop)
+        if pipeline_task is not None and not pipeline_task.done():
+            pipeline_task.cancel()
 
     def _on_pipeline_done(session: Session):
         session_mgr.save(session)
