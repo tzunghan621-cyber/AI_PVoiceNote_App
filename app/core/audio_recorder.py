@@ -70,12 +70,15 @@ class AudioRecorder:
                     self._save_temp(np.concatenate(save_buffer), save_chunk_id)
                     save_buffer = []
                     save_chunk_id += 1
+
+            # I7：flush 殘餘於 while 退出後、finally 前（正常停止路徑）
+            # GeneratorExit / exception 路徑會跳過本區塊直接進 finally，不產生新 yield
+            if transcribe_buffer:
+                yield np.concatenate(transcribe_buffer)
         finally:
             stream.stop()
             stream.close()
-            # flush 殘餘
-            if transcribe_buffer:
-                yield np.concatenate(transcribe_buffer)
+            # WAV flush 不產生 yield — 放 finally 安全
             if save_buffer:
                 self._save_temp(np.concatenate(save_buffer), save_chunk_id)
 

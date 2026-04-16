@@ -132,3 +132,49 @@ class TestAudioRecorder:
 
         # 可能有殘餘 chunk
         assert isinstance(chunks, list)
+
+    @pytest.mark.asyncio
+    async def test_bug12_aclose_does_not_raise_runtime_error(self, recorder):
+        """Bug #12 / I7：async generator cleanup 不得在 finally 內 yield。
+
+        若 finally 有 `yield`，呼叫 gen.aclose() 時 Python 會直接拋
+        `RuntimeError: async generator ignored GeneratorExit`。
+        修復後 aclose() 應乾淨收尾、不拋 RuntimeError。
+        """
+        feed = _simulate_audio_input(recorder, total_sec=1.5)
+
+        with patch("sounddevice.InputStream"):
+            asyncio.create_task(feed())
+            gen = recorder.start()
+            # 等第一個 yield 出來
+            async for _ in gen:
+                break
+            # 顯式 close — 若 finally 仍 yield 會在此處 raise RuntimeError
+            try:
+                await gen.aclose()
+            except RuntimeError as e:
+                if "async generator ignored GeneratorExit" in str(e):
+                    pytest.fail(f"Bug #12 regression: {e}")
+                raise
+
+    @pytest.mark.asyncio
+    async def test_bug12_flushes_partial_transcribe_buffer_on_normal_stop(self, recorder):
+        """I7：正常停止（request_stop）路徑仍能 flush 殘餘 < transcribe_chunk_sec 的小區塊。
+
+        修復前殘餘 yield 在 finally；修復後移到 while 退出後、finally 前，
+        正常停止仍可收到，但 GeneratorExit 路徑不會走到。
+        """
+        # 餵 0.7 秒（< transcribe_chunk_sec=1s），stop 後應收到殘餘
+        feed = _simulate_audio_input(recorder, total_sec=0.7)
+
+        chunks = []
+        with patch("sounddevice.InputStream"):
+            asyncio.create_task(feed())
+            async for chunk in recorder.start():
+                chunks.append(chunk)
+
+        # 殘餘應為唯一 yield（總長 < 1s）
+        assert len(chunks) >= 1, "正常停止未 flush 殘餘 buffer"
+        total_samples = sum(len(c) for c in chunks)
+        # 近似 0.7 秒（有 tolerance，feed 後續還有 0.05s sleep + 動作延遲）
+        assert 0.3 <= total_samples / recorder.sample_rate <= 1.2
