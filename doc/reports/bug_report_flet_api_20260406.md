@@ -1,13 +1,13 @@
 ---
 title: Flet 0.84.0 API Breaking Changes — Bug Report
 date: 2026-04-06
-updated: 2026-04-08
+updated: 2026-04-16
 type: bug-report
 phase: V (Verify)
 agent: 實驗者（Verifier）
-status: 🔴 阻塞中（Bug #6 + #7 待修復）
+status: 🔴 阻塞中（Bug #9 — Pipeline lifecycle / recorder 未連帶停止）
 severity: high
-tags: [bug, flet, api-breakage, v-phase]
+tags: [bug, flet, api-breakage, v-phase, pipeline-lifecycle]
 ---
 
 # Flet 0.84.0 API Breaking Changes — Bug Report
@@ -17,15 +17,18 @@ tags: [bug, flet, api-breakage, v-phase]
 
 ## 摘要
 
-V Phase 驗證期間，連續發現 **7 個** Flet 0.84.0 API 不相容問題：
+V Phase 驗證期間，連續發現 **9 個** 相關問題（Flet 0.84 + 非 Flet 衍生）：
 - Bug #1~#3：已修復（V Phase 第一輪）
 - Bug #4 + #5：Tabs/Tab 架構重設計，commit `43932d3` 全面重構修復
-- Bug #6 + #7：第二輪驗證點分頁時觸發，待修
+- Bug #6 + #7：第二輪驗證點分頁時觸發，已修
+- Bug #8：Checkbox `label_style` 誤改 + NavigationRail 越界，commit `4831d7b` 修復
+- **Bug #9（新，2026-04-16）**：Pipeline 崩潰未連帶停止 recorder，UI 與 runtime state 失聯 — **非純 Flet API 問題，是 lifecycle / 錯誤處理設計缺陷**
 
 **問題類型彙整：**
 1. **唯讀 property 衝突** — Bug #1
-2. **參數名移除 / constructor 重設計** — Bug #2/#3/#4/#5/#6
+2. **參數名移除 / constructor 重設計** — Bug #2/#3/#4/#5/#6/#8
 3. **Lifecycle 變嚴格**（unit test 與 import smoke test 都抓不到，只有 GUI 操作才會炸）— Bug #7
+4. **Pipeline / recorder lifecycle 解耦失誤** — Bug #9（與 Flet 0.84 無關，屬 app 邏輯層）
 
 > ⚠️ **建議**：請 Researcher 系統性掃過 Flet 0.84.0 升級指南，一次找齊所有不相容處，避免逐個踩雷。
 
@@ -328,6 +331,115 @@ Flet 0.84.0 對 control lifecycle 變嚴格：
 
 ---
 
+## Bug #9：Pipeline 崩潰未連帶停止 recorder，UI 與 runtime state 失聯 🔴
+
+| 項目 | 內容 |
+|---|---|
+| 狀態 | 🔴 待修復（2026-04-16 V Phase 第三輪甲方協同時觸發） |
+| 觸發 | 點「開始錄音」→ 錄音約 3 分鐘後 Pipeline 內部拋例外 |
+| 檔案 | [main.py:68-104](app/main.py#L68-L104)（主要）、[stream_processor.py](app/core/stream_processor.py)、[audio_importer.py:23](app/core/audio_importer.py#L23)（連鎖） |
+| 阻塞 | #3 即時錄音、#5 完整 Pipeline、#6 即時儀表板三區塊（甲方完整流程驗證全數阻塞） |
+| 類別 | **邏輯層 / 錯誤處理 / Lifecycle**（與 Flet 0.84 API 無關） |
+| 指派建議 | 碼農 A（邏輯類，依本次任務分工） |
+
+### 現象
+
+甲方「開始錄音」後實時錄音，約 3 分鐘時觸發 pipeline 內部例外，**GUI 進入「殭屍 live 模式」**：
+
+| 觀察 | 描述 |
+|---|---|
+| 錄音計時器 | 持續累加至 **08:19+** 不停 |
+| 逐字稿區塊 | 仍有新 segment 進來，但時間戳 **[00:00], [00:02]... [00:08], [00:00], [00:03]...** 在某點**跳回 00** |
+| 「停止錄音」按鈕 | 點擊**完全無反應** |
+| SnackBar 錯誤提示 | 未顯示（或一閃而過，甲方沒看見） |
+| 只能救援方式 | 強制 kill python process |
+
+### log 證據
+
+```
+INFO:faster_whisper:Processing audio with duration 00:10.010  × 18 次（~180s = 3 分鐘）
+INFO:faster_whisper:VAD filter removed ...
+ERROR:__main__:Pipeline error:                                    ← 空訊息！
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-6959' coro=<<async_generator_athrow without __name__>()> 
+       exception=RuntimeError('async generator ignored GeneratorExit')>
+RuntimeError: async generator ignored GeneratorExit
+```
+
+### 根因拆解
+
+#### 主因 A — `_run` 與 `recorder` lifecycle 解耦
+
+[main.py:68-75](app/main.py#L68-L75) `on_start_recording.innner._run`：
+```python
+async def _run():
+    try:
+        await processor.run(recorder.start(), session)
+    except Exception as e:
+        logger.error(f"Pipeline error: {e}")
+        page.show_dialog(ft.SnackBar(content=ft.Text(f"處理失敗：{e}")))
+
+page.run_task(_run)
+```
+
+- `processor.run()` 拋例外 → `_run` coroutine 結束
+- **但 `recorder` 物件還活著**。`recorder.start()` 這個 async generator 若底層用 background thread 持續 capture audio，且 pipeline 不再 consume chunks，state 就掛在那
+- `on_stop_recording` ([main.py:100-104](app/main.py#L100-L104)) 只呼叫 `recorder.stop()` set flag，但沒人 consume：
+  ```python
+  def on_stop_recording():
+      nonlocal recorder
+      if recorder:
+          page.run_task(recorder.stop)
+  ```
+- dashboard 沒被切回 review/idle，UI 留在 live 態繼續展示過期資料
+
+#### 主因 B — 錯誤訊息被 swallow
+
+`logger.error(f"Pipeline error: {e}")`：
+- 用 `str(e)` 而非 `repr(e)` / `logger.exception(...)`
+- `asyncio.CancelledError` 或空訊息 exception 的 `str()` 都是 `""`
+- → log 只有 `Pipeline error:` 沒下文，debug 時無從下手
+
+#### 主因 C — 逐字稿時間戳歸零
+
+Pipeline crash 後某路徑（可能是新的 `_run` 被觸發，或 transcriber 共享實例被 `reset()`）讓 `chunk_id` 歸零，但 recorder 持續送舊音訊進來，造成時間戳 **[00:08] 後跳 [00:00]** 的詭異現象。
+
+#### 連鎖 D — `audio_importer.py` async gen 警告
+
+[audio_importer.py:23](app/core/audio_importer.py#L23) 本身沒 try/except 吃 GeneratorExit，但在 pipeline 掛掉時 async gen close 過程觸發 `RuntimeError: async generator ignored GeneratorExit`。這多半是 **C 擴充層（`to_thread` 內的 whisper / pydub）長時間阻塞 + asyncio GC 時機**造成，**A+B+C 修好後應自然消失**，本 bug 不單獨處理 D。
+
+### 修復方向建議（由碼農 A 據以實作）
+
+| # | 位置 | 改動 |
+|---|---|---|
+| A1 | [main.py:68-75](app/main.py#L68-L75) `on_start_recording._run` | `except Exception as e` → `except asyncio.CancelledError: raise` + `except Exception: logger.exception(...)`；`finally` 區塊 `await recorder.stop()` |
+| A2 | 同上 | SnackBar 訊息用 `type(e).__name__` 保證非空；停留時間拉長或改持久對話框 |
+| A3 | [main.py:91-98](app/main.py#L91-L98) `on_import_audio._run` | 同 A1 A2 處理（匯入音檔路徑） |
+| B1 | [main.py:100-104](app/main.py#L100-L104) `on_stop_recording` | 保留 `_run` task handle（`self._pipeline_task = page.run_task(_run)`）；stop 時 `_pipeline_task.cancel()` 配合 `await recorder.stop()` |
+| C1 | [main.py:68-98](app/main.py#L68-L98) 兩個 `_run` | Pipeline 異常結束後 `dashboard.set_mode("idle", None)`（錄音）或 `("review", session)`（匯入已有部分資料可保留），避免 GUI 殭屍 |
+| D | [audio_importer.py:23](app/core/audio_importer.py#L23) | **不改**（理論無問題，A+B+C 後警告應消失；若仍有再單獨處理） |
+| E | transcriber reset 時間戳 | **不改**（Pipeline 不崩後此現象不再重現） |
+
+### 驗證條件（碼農 A 修完後 Verifier 重測）
+
+1. 127 fast tests 無 regression
+2. 甲方「開始錄音」→ 錄 5-10 分鐘 → 期間 Pipeline 若掛：log 要有 `logger.exception` 完整 traceback、GUI 要彈可見錯誤、dashboard 回 idle、計時器停
+3. 「停止錄音」按鈕在任何 pipeline state（正常/已崩潰）都能把 recorder + pipeline task 清乾淨
+4. 強制 kill process 不是唯一救援
+
+### ⚠️ 此類 Bug 的特殊危險性
+
+| 偵測手段 | 是否能抓到 |
+|---|---|
+| 單元測試 | ❌（測單一函式，不跑 async lifecycle） |
+| Import smoke test | ❌ |
+| 自動化 GUI 啟動冒煙 | ❌（啟動不觸發 pipeline） |
+| **GUI 實機跑真實錄音 3+ 分鐘** | ✅ |
+
+→ 已再次驗證 [[#三輪結語#V Phase 第三輪結語]] 的觀察：**Flet 相關 PR 必須有實機 GUI + 真實 pipeline 時長驗證**，單元/冒煙不夠。
+
+---
+
 ## V Phase 驗證進度
 
 | # | 項目 | 狀態 |
@@ -372,3 +484,16 @@ ft\.Checkbox\(            # 推測類似的 constructor 變動
 ```
 
 待命中，等 Bug #6 + #7 修復後繼續驗證 #2、#5~#10。
+
+---
+
+## V Phase 第三輪結語（2026-04-16 GUI 協同後）
+
+Bug #1~#8 全數 Flet API / Flet 0.84 lifecycle 相關都已收斂。然而**第一次跑真實時長（5+ 分鐘）即時錄音**時，立即暴露 Bug #9 — 這是**非 Flet 層**、**應用邏輯層**的 Pipeline/Recorder lifecycle 設計缺陷。
+
+此現象再次印證前三輪結語的主張：**Flet 相關 commit 的 GUI smoke test，必須含真實 pipeline 時長（≥5 分鐘即時錄音 + 匯入音檔完整跑完）**。單元測試與冒煙測試沒有任何一項能觸發 Bug #9。
+
+建議：
+1. 派碼農 A（邏輯類，依本次任務分工）修 Bug #9
+2. 修復後 Verifier 先跑 127 fast tests，再協同甲方重跑即時錄音 5-10 分鐘
+3. 一併驗證「匯入音檔」路徑的同類 lifecycle 問題（[main.py:91-98](app/main.py#L91-L98)）

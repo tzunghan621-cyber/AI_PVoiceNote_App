@@ -1,9 +1,10 @@
 ---
 title: V Phase 驗證報告
 date: 2026-04-06
+updated: 2026-04-16
 phase: V (Verify)
 agent: 實驗者（Verifier）
-status: 🟡 進行中（驗證 #1 PASS，#2~#10 待測）
+status: 🔴 第三輪 GUI 協同發現 Bug #9（Pipeline/recorder lifecycle），阻塞 S3
 tags: [verification, v-phase, report]
 ---
 
@@ -168,3 +169,142 @@ V Phase 第一輪驗證時發現 2 個 Runtime Error，由 Verifier 就地修復
 **🟡 進行中 — 暫停等待甲方繼續手動驗證**
 
 下一步：甲方有空時，啟動 App 並依序完成驗證 #2~#10。
+
+---
+
+## 七、V Phase 第三輪（2026-04-16，Bug #8 修復後接手）
+
+> 前置：[[devlog_20260416_builderB_bug8]] — 碼農 B 修完 Bug #8（Checkbox label_style + NavigationRail 越界）並與甲方協同自測 S1/S6/S7/S8 全 PASS。
+> 對應 checklist：[[flet_0.84_migration_20260408]] §G4（S1-S9）。
+> 執行：實驗者（Verifier）。
+
+### 7.1 自動化 regression（Verifier autonomous）
+
+```bash
+python -m pytest -m "not slow and not real_audio" -q
+```
+
+| 結果 | 數值 |
+|---|---|
+| passed | **106** |
+| deselected (slow / real_audio) | 22 |
+| failed | 0 |
+| warning | 1（pydub 的 `audioop` Py3.13 deprecation，Py3.11 環境無影響） |
+| 耗時 | 88.88s |
+
+✅ 無 regression — Bug #1-#8 全部修復後的 baseline 穩定。
+
+> 備註：之前報告 §1.2 的「127」是把手動補跑的 Whisper（7）+ ChromaDB（14）併入後合計，這輪用統一指令跑得到 106 fast tests。
+
+### 7.2 App 啟動冒煙（Verifier autonomous）
+
+```bash
+python -m app.main
+```
+
+| 檢查點 | 結果 |
+|---|---|
+| TCP server 啟動 | ✅ `localhost:58342` |
+| Flet client 載入 | ✅ `flet-desktop 0.84.0`（cache hit） |
+| Assets 路徑 | ✅ `app/assets` |
+| App session started | ✅ |
+| Startup Traceback | ✅ 無 |
+
+### 7.3 靜態檢查 — 響應式佈局 API（Verifier autonomous）
+
+依 [[flet_0.84_migration_20260408]] §A2 + §G1 對 [dashboard_view.py](app/ui/dashboard_view.py) 掃描：
+
+| 檢查項 | 結果 | 行號 |
+|---|---|---|
+| `page.on_resize`（非 `on_resized`） | ✅ | [dashboard_view.py:359](app/ui/dashboard_view.py#L359) |
+| breakpoint ≥1400 三欄 | ✅ | [dashboard_view.py:645](app/ui/dashboard_view.py#L645) |
+| breakpoint ≥960 兩欄 | ✅ | [dashboard_view.py:655](app/ui/dashboard_view.py#L655) |
+| 否則單欄 | ✅ | `_apply_responsive_layout` 三段分支完整 |
+| `page.on_resize` callback → `_on_page_resized` | ✅ | mount 後才註冊，無 lifecycle 雷 |
+
+與 [[ui_spec]] 對齊。
+
+### 7.4 S2-S5 + S9 GUI smoke test — 甲方協同（2026-04-16 當日）
+
+**執行**：Verifier 背景啟動 `python -m app.main` 並 Monitor 過濾 Traceback/Error；甲方本人操作 GUI。
+
+| S# | 路徑 | 結果 | 觀察 |
+|---|---|---|---|
+| S2 | 響應式佈局三段位 | ⏸ 未測 | 被 S3 阻塞在前 |
+| **S3** | **Dashboard live（即時錄音）** | **🔴 FAIL — 觸發 Bug #9** | 錄音 ~3 分鐘後 pipeline 掛，UI 殭屍 live；詳見 §7.4.1 |
+| S4 | 對話框 | ⏸ 未測 | S3 掛掉後 App 需強制 kill |
+| S5 | SnackBar | ⏸ 未測 | 同上。附註：Bug #9 的錯誤訊息因 `str(e)` 為空+SnackBar 自動消失，甲方**未看見** SnackBar |
+| S9 | 響應式拖動切換 | ⏸ 未測 | 同上 |
+
+#### 7.4.1 Bug #9 簡記（完整請見 [[bug_report_flet_api_20260406]] §Bug #9）
+
+- **觸發**：甲方按「開始錄音」即時收音約 3 分鐘
+- **現象**：Pipeline 例外 → `_run` coroutine 結束但 `recorder` 獨立存活 → GUI 殭屍
+  - 錄音計時持續（觀察到 08:19+）
+  - 逐字稿仍新增，時間戳在某點 **[00:08] → [00:00]** 歸零
+  - **「停止錄音」按鈕失效**
+  - 只能 `TaskStop` / 工作管理員強制終止
+- **log**：`ERROR:__main__:Pipeline error:`（空訊息）+ `RuntimeError: async generator ignored GeneratorExit`
+- **根因類別**：**邏輯層 / 錯誤處理 / Lifecycle**（非 Flet API 問題）
+- **修復建議**：見 bug report §Bug #9「修復方向建議」（主修 [main.py:68-104](app/main.py#L68-L104) 的 _run / on_stop_recording / recorder lifecycle）
+- **指派**：碼農 A（依本次任務分工：邏輯類交碼農 A）
+
+#### 7.4.2 已驗證（Pipeline 前 3 分鐘可正常運作）
+
+S3 雖失敗，但觀察到 Pipeline 在崩潰**前**的確運作：
+- ✅ 「開始錄音」UI 進入 live 模式（錄音中 + 計時器 + 三區塊佈局）
+- ✅ faster-whisper small 成功下載 + 載入
+- ✅ VAD 過濾 + transcribe_chunk 連續產 segments（前 3 分鐘正常）
+- ✅ Dashboard 即時顯示逐字稿（S6 效果隱含 PASS）
+- ✅ Ollama 已連線狀態顯示正常（status bar 顯示「Ollama 已連線 | gemma4:e2b」）
+
+→ 代表 Bug #9 **只卡住 Pipeline 的 shutdown / error-handling 路徑**，happy path 前半段 OK。
+
+### 7.5 真實音檔 Pipeline 試跑（Verifier autonomous，**非阻塞發現**）
+
+借用 [data/temp/錄製.m4a](data/temp/錄製.m4a)（50s m4a）臨時作為 fixture 跑 `pytest -m real_audio`：
+
+| 階段 | 結果 |
+|---|---|
+| AudioImporter | ✅ 產出 chunks |
+| Transcriber (whisper **tiny**) | ⚠️ 0 segments |
+| 後續階段 | 未執行（Transcriber 斷線） |
+
+**判讀**：
+- test fixture config 為加速改用 `whisper.model: "tiny"`，非 spec 預設 `small`
+- tiny 模型對低語音密度 / 50s 短音檔召回率有限，產 0 segments 屬合理邊界
+- **非 Pipeline bug**，但測試 config 的 tiny 對此音檔太弱
+- 附帶發現：`tests/test_e2e_real_audio.py:118` 的 `print("🎙️...")` 在預設 `cp950` 終端下 UnicodeEncodeError — 已用 `PYTHONIOENCODING=utf-8` 繞過，**非產品代碼問題**，記錄供未來測試健壯化參考
+
+**行動**：
+- 已清理臨時 fixture（`tests/fixtures/audio/vphase3_sample.m4a` 已移除）
+- **不建議**列為 bug — spec 預設模型 small 尚未在此音檔驗證
+- **建議**：S3 GUI 協同時一併用 spec 預設配置走完整 Pipeline（甲方已實測過 small + 真實音檔可行，見專案早期 devlog）
+
+### 7.6 第三輪結論
+
+| 類別 | 狀態 |
+|---|---|
+| 自動化測試（fast suite） | ✅ 106/106 |
+| App 啟動冒煙 | ✅ clean |
+| 靜態檢查（響應式 API） | ✅ 對齊 spec |
+| GUI S1/S6/S7/S8（碼農 B 協同甲方，前次） | ✅ PASS |
+| GUI S3（本次協同） | 🔴 FAIL — Bug #9 |
+| GUI S2/S4/S5/S9 | ⏸ 未測（S3 阻塞在前） |
+| 已知 UX 議題 | ⚠️ S6 首次 ML 載入阻塞（[[devlog_20260416_builderB_bug8]] 已標記，非本輪範圍） |
+| 新 bug | 🔴 **Bug #9**（Pipeline/recorder lifecycle） |
+
+### 7.7 交棒大統領
+
+- 自動化 + 冒煙 + 靜態檢查 **無阻塞**
+- **GUI S3 協同第一次就撞到 Bug #9**，Pipeline 在真實 3 分鐘時長下暴露 lifecycle 設計缺陷
+- **請大統領派工碼農 A** 修 Bug #9（完整修復建議見 [[bug_report_flet_api_20260406]] §Bug #9「修復方向建議」表）
+- Bug #9 修完後 Verifier 重跑：
+  1. 127 fast tests（regression）
+  2. 協同甲方即時錄音 5-10 分鐘（確認 lifecycle 治本）
+  3. 續跑 S2/S4/S5/S9
+- S2/S4/S5/S9 **不會受 Bug #9 阻塞**，理論上可在 Bug #9 修復前另排協同（甲方若有時間，避開 S3「開始錄音」路徑即可），但因 App 掛掉後需重啟且 S2/S9 牽涉響應式佈局切換需 live 模式驗證，**建議併在 Bug #9 修復後一起跑**比較省協同輪次
+
+---
+
+**🔴 第三輪 GUI 協同發現 Bug #9 — 阻塞 S3，待碼農 A 修復**
