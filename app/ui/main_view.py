@@ -165,15 +165,20 @@ class MainView:
             on_change=lambda e: self._navigate(e.control.selected_index),
         )
 
-        # 主佈局
-        body = ft.Row(
-            [
-                self.nav_rail,
-                ft.VerticalDivider(width=1, color=COLOR_SURFACE),
-                self.content_area,
-            ],
+        # 主佈局 — body 必須包進 expand 的 Container，
+        # Flet 0.84 Column 對中間 expand 子元素的高度分配變嚴格
+        body = ft.Container(
+            content=ft.Row(
+                [
+                    self.nav_rail,
+                    ft.VerticalDivider(width=1, color=COLOR_SURFACE),
+                    self.content_area,
+                ],
+                expand=True,
+                spacing=0,
+            ),
             expand=True,
-            spacing=0,
+            bgcolor=COLOR_BG,
         )
 
         page.add(
@@ -189,8 +194,11 @@ class MainView:
 
     def _navigate(self, index: int):
         self._current_view_index = index
+        # Flet 0.84：NavigationRail.selected_index 不得超過 destinations 範圍
+        # 設定頁由齒輪觸發（index=3），destinations 只有 3 項（0~2），
+        # 超範圍時用 None 取消選中
         if hasattr(self, 'nav_rail'):
-            self.nav_rail.selected_index = index
+            self.nav_rail.selected_index = index if index < len(self.nav_rail.destinations) else None
 
         views = [
             self.dashboard_view,

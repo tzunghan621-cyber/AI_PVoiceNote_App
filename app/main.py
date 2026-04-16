@@ -100,7 +100,8 @@ def main(page: ft.Page):
     def on_stop_recording():
         nonlocal recorder
         if recorder:
-            asyncio.ensure_future(recorder.stop())
+            # recorder.stop() 只是設旗標，用 page.run_task 確保跑在 event loop 上
+            page.run_task(recorder.stop)
 
     def _on_pipeline_done(session: Session):
         session_mgr.save(session)

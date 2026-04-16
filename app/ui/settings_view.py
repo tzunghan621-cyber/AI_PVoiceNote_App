@@ -92,7 +92,7 @@ class SettingsView(ft.Container):
         val = self.config.get(config_key, False)
         cb = ft.Checkbox(
             label=label, value=bool(val),
-            label_text_style=ft.TextStyle(color=COLOR_TEXT),
+            label_style=ft.TextStyle(color=COLOR_TEXT),
         )
         self._fields[config_key] = cb
         return cb
