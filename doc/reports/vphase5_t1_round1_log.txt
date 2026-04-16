@@ -1,0 +1,15 @@
+INFO:flet:Starting up TCP server on localhost:52378
+INFO:flet:App URL: tcp://localhost:52378
+INFO:flet_desktop:Flet client found in cache: C:\Users\junk6\.flet\client\flet-desktop-full-0.84.0
+INFO:flet:App session started
+ERROR:concurrent.futures:exception calling callback for <Future at 0x1e0da043110 state=finished raised TypeError>
+Traceback (most recent call last):
+INFO:app.core.session_manager:Session b90ad044-cdce-4309-97a0-b37057985b50 transition: recording �� processing (abort_reason=None)
+ERROR:concurrent.futures:exception calling callback for <Future at 0x1e0da06b4d0 state=finished raised TypeError>
+Traceback (most recent call last):
+ERROR:concurrent.futures:exception calling callback for <Future at 0x1e0da064dd0 state=finished raised TypeError>
+Traceback (most recent call last):
+INFO:httpx:HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+INFO:app.core.session_manager:Session b90ad044-cdce-4309-97a0-b37057985b50 transition: processing �� ready (abort_reason=None)
+ERROR:__main__:Recording pipeline error
+Traceback (most recent call last):

@@ -4,7 +4,7 @@ date: 2026-04-06
 updated: 2026-04-16
 phase: V (Verify)
 agent: 實驗者（Verifier）
-status: 🔴 第四輪 GUI 協同發現 Bug #10/#11/#12（Bug #9 修復回歸 + UI 凍結 + async gen），持續阻塞 S3/S4/S5/S9
+status: 🔴 第五輪實機 FAIL — 發現 Bug #13（asyncio.shield 對 Flet future TypeError）+ Bug #14（SummaryPanel mount-before-update），阻塞甲方簽核。Bug #12 實機驗證 PASS（無 GeneratorExit warning）
 tags: [verification, v-phase, report]
 ---
 
@@ -444,3 +444,255 @@ python -m pytest -m "not slow and not real_audio" -q
 ---
 
 **🔴 第四輪回報三個新 Bug — Bug #10 最急（資料遺失），全數待大統領派工**
+
+---
+
+## 九、V Phase 第五輪（2026-04-16，碼農 A Bug #11/#10/#12 三 step 修完後重驗）
+
+> 前置：
+> - 研究者 [[pipeline_lifecycle_architecture_20260416]] 交付 7 invariants + 3 option 選型 + 7 spec gaps（commit `5f84925`）
+> - 大統領依 gap 清單更新 specs（commit `f56bb6a`，G1 甲方簽核，G2-G7 Director 自簽）
+> - 碼農 A [[devlog_20260416_builderA_bug11_10_12]]：Step 1 Bug #11（c22c1a2）→ Step 2 Bug #10（9c6b96e）→ Step 3 Bug #12（49c54f9）。單元層 **147 passed, 1 skipped**（baseline 133 → +14 spec-level tests 對應 I1-I7）
+> - 碼農 A 明確委交 CLI blocker 實機層：5-10 分鐘錄音 + 拔 Ollama + stop timeout + 匯入異常 + Bug #12 log 驗證
+>
+> 執行：實驗者（Verifier）+ 甲方協同。
+
+### 9.1 Step 1 — Regression（Verifier autonomous）
+
+```bash
+python -m pytest -m "not slow and not real_audio" -q
+```
+
+| 結果 | 數值 |
+|---|---|
+| passed | **126**（含碼農 A 新增 14 個 spec-level tests 對應 I1-I7） |
+| deselected (slow / real_audio) | 22 |
+| failed | 0 |
+| warning | 1（pydub `audioop` Py3.13 deprecation，Py3.11 無影響） |
+| 耗時 | 20.33s |
+
+✅ **無 regression**。
+
+> 備註：碼農 A devlog 報 147 passed（含 test_transcriber 7 + test_knowledge_base 14 需另跑），Verifier 用與前四輪一致的 `-m "not slow and not real_audio"` 指令得到 126。兩個數字對應不同過濾；fast suite 基準穩定。
+
+### 9.2 Step 2 — 靜態複核碼農 A diff 對照研究者 7 invariants（Verifier autonomous）
+
+對照 [[pipeline_lifecycle_architecture_20260416]] §1.4 七條 invariants + §2/§4 動點表逐項檢核：
+
+| Invariant | 要求 | 實作位置 | 結果 |
+|---|---|---|---|
+| **I1**（任何路徑必落盤） | session 必進 `data/sessions/{id}.json`，含 aborted partial | [main.py:88-93](app/main.py#L88-L93) `_persist_session` + [main.py:126-128, 167-168](app/main.py#L126-L128) `_run.finally` 無條件呼叫 | ✅ |
+| **I2**（ready 前先完成 final summary） | 轉場順序：save → mark_ready → set_mode("review") | [stream_processor.py:133-149](app/core/stream_processor.py#L133-L149) drain → final → update → mark_ready → on_status_change("ready") → [main.py:209-214](app/main.py#L209-L214) `_on_pipeline_done` save + set_mode | ✅ |
+| **I3**（cancel 只當安全網） | 僅超時或二次按停才 cancel | [main.py:174-203](app/main.py#L174-L203) `_stop_recording_async`：`wait_for(shield, stop_drain_timeout_sec=90)` → `TimeoutError` 才 `task.cancel()` | ✅ |
+| **I4**（Summarizer 不阻塞 audio consume） | 主迴圈 `async for` 持續推進 | [stream_processor.py:116-130](app/core/stream_processor.py#L116-L130) `asyncio.create_task(_run_summary_async(...))` 後立即 continue；`_summarizing` flag 防連發 | ✅ |
+| **I5**（UI mode SSoT = Session.status） | mode 由 status 衍生；UI 讀 status | [models.py](app/core/models.py) `Session.mode` @property（recording/processing → live，其餘 → review）；[main.py:70-86](app/main.py#L70-L86) `_finalize_ui` 讀 `session.status` | ✅ |
+| **I6**（status 轉換由 SessionManager 專屬 API） | 無直接 `session.status = ...` 賦值 | [session_manager.py:59-86](app/core/session_manager.py#L59-L86) `transition` 為唯一入口；`end_recording` / `mark_ready` / `mark_aborted` 全走 transition | ⚠️ **觀察 Obs-1** — [exporter.py:15](app/core/exporter.py#L15) 仍直接 `session.status = "exported"` 未走 transition（Bug #10/#11/#12 修復範圍外的舊代碼，見 §9.6） |
+| **I7**（async gen cleanup 不 yield） | finally 內無 `yield` | [audio_recorder.py:74-83](app/core/audio_recorder.py#L74-L83) `if transcribe_buffer: yield ...` 搬至 while 退出後、finally 前；finally 僅 `stream.stop/close` + WAV flush（無 yield） | ✅ |
+
+**C1-C8 補充檢核**（§2.1 + §4.1）：
+
+| 條件 | 實作 | 結果 |
+|---|---|---|
+| C1（正常停止不預設 cancel） | `_stop_recording_async` 只呼 `request_stop` + `wait_for(shield)` | ✅ |
+| C2（cancel 路徑 partial save） | `_run.finally` 無條件 `_persist_session`；CancelledError 分支 `mark_aborted("stop_timeout")` | ✅ |
+| C3（異常路徑與正常分離） | CancelledError → stop_timeout；Exception → pipeline_error | ✅ |
+| C4（`recorder.stop` 語意） | rename 為 `request_stop`，docstring 明示軟停止（G5） | ✅ |
+| C5（非阻塞 Summarizer） | fire-and-forget create_task | ✅ |
+| C6（單一 pending summary） | `_summarizing` flag + 觸發條件 `and not self._summarizing` | ✅ |
+| C7（summary 錯誤不炸主迴圈） | `_run_summary_async` 內部 try/except 吞例外只 log，finally 重置 flag | ✅ |
+| C8（停止與 pending 協調） | `_drain_pending_summary` `wait_for(shield, pending_summary_wait_sec=60)` → TimeoutError 才 cancel；final summary 再跑 | ✅ |
+
+**G1-G7 Spec gap 落地檢核**：
+
+| Gap | 實作 | 結果 |
+|---|---|---|
+| G1（aborted + abort_reason） | [session_manager.py:21](app/core/session_manager.py#L21) `_VALID_STATUSES` 含 aborted；`transition` 驗證 abort_reason 必填；[models.py](app/core/models.py) `Session.abort_reason` 欄位 | ✅ |
+| G2（final summary timeout + fallback） | [stream_processor.py:151-208](app/core/stream_processor.py#L151-L208) `_run_final_summary` + `_build_fallback_final`；`SummaryResult.fallback_reason` 欄位；config `final_summary_timeout_sec: 120` | ✅ |
+| G3（pending summary 停止期處理） | [stream_processor.py:66-90](app/core/stream_processor.py#L66-L90) `_drain_pending_summary`；config `pending_summary_wait_sec: 60` | ✅ |
+| G4（mode 衍生自 status） | `Session.mode` @property | ✅ |
+| G5（recorder 軟停止命名） | `request_stop` rename + docstring | ✅ |
+| G6（併發模型入 spec） | [[system_overview#4.2]] 已補「Summarizer 跑在獨立 task... 同時最多一個 pending summary」 | ✅ |
+| G7（異常處理原則總則） | [[system_overview#6. 異常處理原則（總則）]] 三原則已入 spec | ✅ |
+
+**靜態結論**：7 條 invariants + 8 條 C 檢核 + 7 個 G gap **全部對應代碼落地**。Bug #10/#11/#12 修復深度覆蓋研究者 review 要求，無第四輪「B1 語意翻轉」等 invariant 偏差。
+
+### 9.3 Step 3 — 實機層檢核（待甲方協同）
+
+碼農 A devlog 明列 6 項 + 本輪新增，總表如下。**此區需甲方本人操作 GUI**，實驗者（CLI）負責：
+
+1. `python -m app.main` 背景啟動 + Monitor log（過濾 `RuntimeError` / `ERROR:__main__:Pipeline` / `async generator`）
+2. 每項完成後截圖 / dump log / 查 `data/sessions/` 落盤
+3. 彙整進 §9.4
+
+#### 9.3.1 T1 — 5-10 分鐘正常錄音 + 正常停止（最核心）
+
+| # | 觀察點 | 預期 | 驗 invariant |
+|---|---|---|---|
+| T1-1 | 前 180s 逐字稿每 10s 產新 segment | 穩定 | I4（pre-summary） |
+| T1-2 | 180s 後首次週期 summary 觸發 | 逐字稿**不凍結超過 15s**，期間 ≥ 3 個新 segment | **I4**（summary task 跑時主迴圈不凍） |
+| T1-3 | 會議重點 / Action Items 出現在 UI | 第一次摘要完成後填入 | §4.2 週期摘要 |
+| T1-4 | 跨過第二次週期（~360s）仍穩定 | 繼續產 segment + 第二版摘要覆蓋 | I4 + C6 |
+| T1-5 | 5+ 分鐘後按「停止錄音」 | UI 進 review（不是 idle） | I2 + I5 |
+| T1-6 | `data/sessions/{id}.json` 存在 | status=`ready`，非 `aborted`/`live`/`recording` | **I1 + I2** |
+| T1-7 | session 有 final summary | `summary.is_final=True`；無 `fallback_reason` | spec §4.2 |
+| T1-8 | log 無 `RuntimeError: async generator ignored GeneratorExit` | — | **Bug #12 I7** |
+| T1-9 | log 順序：`transition: recording → processing` → `transition: processing → ready` | — | I6 |
+
+#### 9.3.2 T2 — 拔 Ollama 測試（final summary fallback）
+
+| # | 觀察點 | 預期 |
+|---|---|---|
+| T2-1 | 錄音中途（~200s 後，第一次週期 summary 剛過）執行 `ollama stop` | — |
+| T2-2 | 下一次週期 summary 觸發時 | 走 fallback 路徑；週期 summary 失敗但**不炸主迴圈**；UI 應有降級提示（§6 原則 3） |
+| T2-3 | 錄音 5+ 分鐘後按停止 | status=`ready`（**不是** `aborted`），summary.is_final=True + `fallback_reason="ollama_failure"` 或 `"ollama_timeout"` |
+| T2-4 | log 有完整 traceback | `logger.exception("Final summary failed — using fallback")` 或 `"Periodic summary generation failed"` |
+| T2-5 | `data/sessions/{id}.json` 存在 | ✅ 落盤 |
+
+#### 9.3.3 T3 — Stop timeout 測試（watchdog cancel）
+
+> 前提：需能人為卡住 pipeline > 90s（`stop_drain_timeout_sec`）。建議法：Ollama 推理卡死（例如模型換超大或打 busy-loop bash 佔滿 CPU），使 final summary 吃完 pending 60s + final 120s 還沒完。實際不一定能穩定觸發，若無法重現則在 §9.4 標「無法人為觸發，邏輯依 §9.2 靜態複核已覆蓋」。
+
+| # | 觀察點 | 預期 |
+|---|---|---|
+| T3-1 | 錄音 ≥ 3 分鐘 → 按停止 | UI 顯示「停止中...」（若 dashboard 有此提示；否則看計時器凍結） |
+| T3-2 | 90s 後 watchdog cancel 啟動 | log 有 `"Pipeline drain exceeded 90s — forcing cancel"` |
+| T3-3 | session 落盤 | status=`aborted`，`abort_reason="stop_timeout"` |
+| T3-4 | UI 進 review(partial) | 有 segments → review；無則 idle |
+| T3-5 | 仍無 `async generator ignored GeneratorExit` | I7 |
+
+#### 9.3.4 T4 — 匯入音檔異常路徑
+
+| # | 觀察點 | 預期 |
+|---|---|---|
+| T4-1 | 匯入長度 > 3 分鐘的音檔 | UI 進 live，逐字稿逐段填入 |
+| T4-2 | 匯入中拔 Ollama | 走 fallback；pipeline 繼續跑完 segments |
+| T4-3 | 匯入完成 | status=`ready` + `fallback_reason`；或若 transcribe 全失敗 → `aborted` + `abort_reason="pipeline_error"` |
+| T4-4 | 已 yield 的 segments 保留 | 不靜默丟資料（I1） |
+
+#### 9.3.5 T5 — 停止按鈕語意（各 state 皆可救回）
+
+| # | 情境 | 預期 |
+|---|---|---|
+| T5-1 | 正常錄音中按停止 | drain（≤90s）→ `ready` |
+| T5-2 | summary 執行中按停止 | 等 `pending_summary_wait_sec=60s` → final（可能 fallback）→ `ready` |
+| T5-3 | 極端卡住（人為）按停止 | 90s 後 cancel → `aborted` + `abort_reason="stop_timeout"` |
+
+> 連按兩次停止：目前 `_stop_recording_async` 會 early return（task 還在跑就返回），**第二次按不會提前逃生**。碼農 A devlog 已標為「留給 Reviewer 判斷是否需加強制逃生」。若甲方實機 T5-3 耐不住 90s，可觀察此行為；**非阻塞 bug**，視為 future-work。
+
+#### 9.3.6 T6 — Bug #12 log 驗證（所有路徑）
+
+每項完成後搜 log：
+
+```bash
+grep -i "async generator ignored GeneratorExit" <log>
+grep -i "Task exception was never retrieved" <log>
+```
+
+預期：**0 筆匹配**。若仍有則回報碼農 A（devlog 已標示「後續可重構為 async context manager」的方案）。
+
+### 9.4 Step 3 結果（2026-04-16 晚間甲方協同 T1 兩次）
+
+完整 raw log：[[vphase5_raw_round2|doc/reports/vphase5_raw_round2.log]]（tee 完整捕獲，含所有 Traceback）。
+
+| T# | 路徑 | 結果 | 實機觀察 |
+|---|---|---|---|
+| T1 | 5-10 分鐘正常錄音 + 停止（**兩次 session**） | 🔴 **FAIL** | ▪ 兩次 session 都發生「按停止按鈕 → UI 無反應，錄音計時繼續跳」<br>▪ 背景 recorder 實際已軟停 → audio gen 退 → processor.run 走完 → session save 到 `data/sessions/`（I1 ✅）<br>▪ session.status=ready 但 UI 永不切 review（I2 表象成立但 UI 不閉環）<br>▪ 甲方只能強制關視窗<br>▪ **log 無 `async generator ignored GeneratorExit`**（Bug #12 實機 ✅）<br>▪ segments 全空（VAD 全過濾，**非 App bug**，chunk_0000.wav 分析 peak=-52dBFS，屬麥克風環境訊號偏低） |
+| T2 | 拔 Ollama（fallback） | ⏸ 未跑 | T1 阻塞在前 |
+| T3 | Stop timeout（watchdog） | ⏸ 未跑 | Bug #13 已讓 watchdog 實質失效，T3 現在無法觀察「cancel → aborted」路徑是否正確 |
+| T4 | 匯入音檔異常 | ⏸ 未跑 | T1 阻塞 |
+| T5 | 停止按鈕各 state | 🔴 **FAIL**（T1 已測第一格） | T5-1（正常錄音中按停止）已重現「無反應」 |
+| T6 | Bug #12 log（全路徑） | ✅ **PASS** | 兩次 session 完整流程（含停止 drain + finally flush）log 零匹配 `async generator ignored GeneratorExit`；Bug #12 修復實機有效 |
+
+#### 9.4.1 Bug #13 簡記（完整見 [[bug_report_flet_api_20260406#Bug #13]]）
+
+- **根因**：[main.py:191](app/main.py#L191) `asyncio.shield(task)`。`task = page.run_task(_run)` — Flet 0.84 回傳 `concurrent.futures.Future`，不是 `asyncio.Task`；`asyncio.shield._ensure_future` 拋 TypeError
+- **影響**：停止按鈕 UI 無反饋、I3 watchdog 機制失效（但 session 靠軟停仍走完，I1 守住）
+- **為什麼沒抓到**：研究者架構 review 的漏網之魚（§2.3 方案 A 建議 `asyncio.wait_for(pipeline_task, timeout)` 但沒驗 Flet 下 `page.run_task` 回傳型別）。碼農 A 單元測試用 `asyncio.create_task` 模擬 pipeline_task 可通過，生產環境不同
+- **指派**：**碼農 A**（`_stop_recording_async` 為其新增代碼）
+
+#### 9.4.2 Bug #14 簡記（完整見 [[bug_report_flet_api_20260406#Bug #14]]）
+
+- **根因**：[dashboard_view.py:571](app/ui/dashboard_view.py#L571) `_build_review` 建 `SummaryPanel` 後**立刻**呼叫 `update_highlights` → [dashboard_view.py:178](app/ui/dashboard_view.py#L178) 內 `if self.page:` 觸發 Flet 0.84 strict lifecycle → `Control must be added to the page first`
+- **影響**：`_on_pipeline_done` 內的 `dashboard.set_mode("review")` 炸 → UI 永不切 review → `_run.except Exception` 把 RuntimeError 當「recording pipeline error」log 出來（log 訊息誤導性強）
+- **為什麼沒抓到**：第三輪 Bug #7 commit `43932d3` 修 FeedbackView 時沒 grep 其他控件的 `if self.page:` pattern
+- **指派**：**碼農 B**（UI lifecycle，同 Bug #7 脈絡）
+
+#### 9.4.3 Bug #13 + #14 的連鎖效應
+
+| 階段 | 情境 | 後果 |
+|---|---|---|
+| 甲方按停止 | `_stop_recording_async` 的 `request_stop()` 先跑成功 → `asyncio.shield(task)` 炸 TypeError（Bug #13）| UI 無 reaction；但 recorder flag 已設 |
+| 背景執行 | `audio_recorder.start` 的 `while self._recording` 下一輪退 → async gen 耗盡 → `processor.run` 走完 final summary → `mark_ready` | session.status=ready；session 即將 UI 轉場 |
+| UI 轉場嘗試 | `on_status_change("ready")` → `_on_pipeline_done` → `dashboard.set_mode("review")` → 拋 RuntimeError（Bug #14） | UI 永停 live；`_run.except` log「Recording pipeline error」 |
+| finally 清理 | `_persist_session`（冪等 OK）+ `request_stop`（冪等 OK） | I1 ✅（disk 有檔）；但 `if session.status != "ready": _finalize_ui` 擋住（status 已 ready）— **沒有 fallback UI 路徑** |
+| 甲方視角 | UI 卡 live，只能 kill | 資料其實在 disk，但**無法從此 session 繼續到匯出** |
+
+**靜態評估在這裡錯了一件事**：§9.2 表格標 I2 = ✅，但**實機驗出 I2 表象成立 / 實質不閉環**：ready 前 final summary 確實產生、session.status=ready 確實達到、但「UI 切 review」沒發生 → 整條 T4（T4=finalizing → review ok）在研究者 §1.3 狀態機 **並未實際走完**。這要補到未來版本的 invariants 檢核：**I2 不只是 status 轉換正確，還要 UI 轉場完成才算閉環**。
+
+### 9.5 Step 4（S2/S4/S5/S9）— 全未跑（T1 阻塞）
+
+第四輪 Bug #10 阻塞未跑，本輪 T1 因 Bug #13/#14 再度阻塞。**派工修完 #13/#14 後 V Phase 第六輪再補跑**。
+
+| S# | 項目 | 結果 |
+|---|---|---|
+| S2 | 響應式佈局 | ⏸ 阻塞 |
+| S4 | 對話框 | ⏸ 阻塞 |
+| S5 | SnackBar（含 fallback 降級提示必須可見）| ⏸ 阻塞 |
+| S9 | 拖動視窗切換三段式 | ⏸ 阻塞 |
+
+### 9.6 Observation 清單（非阻塞）
+
+| ID | 類別 | 位置 | 說明 | 建議 |
+|---|---|---|---|---|
+| **Obs-1** | I6 覆蓋缺口 | [exporter.py:15](app/core/exporter.py#L15) | `session.status = "exported"` 直接賦值，未走 `SessionManager.transition` | Bug #13 修復時碼農 A 可一併補 `SessionManager.mark_exported(session, export_path)` |
+| **Obs-2** | 二次按停止語意 | [main.py:187-189](app/main.py#L187-L189) | 第二次按停止 early return，無強制逃生 | Bug #13 修復時如採輪詢方案可順便處理 |
+| **Obs-3** | empty segments 降級語意 | [stream_processor.py:141-144](app/core/stream_processor.py#L141-L144) | 實機兩次 session segments=[] 時 final summary 仍產 placeholder 文字（`"（請在此處填入會議的主要討論主題和核心發現）"`），`status=ready + fallback_reason=null`。違反 §6 「明確告知使用者」 | 建議：若 `len(session.segments)==0` → skip final summary 直接 `_build_fallback_final(session, "empty_segments")` 並標 is_final=True + fallback_reason |
+| **Obs-4** | 麥克風環境（甲方側） | N/A | `data/temp/chunk_0000.wav` peak=-52dBFS（正常 -20~-10）；Surface Pro 9 內建麥克風訊號極低 → VAD 全過濾 | **非 App bug**；甲方側檢查 Windows 麥克風預設 device / 增益 / App 權限 |
+
+### 9.7 第五輪結論
+
+| 類別 | 狀態 |
+|---|---|
+| 自動化測試（fast suite） | ✅ 126/126 |
+| 靜態複核 — 7 invariants | ✅ 全部落實（Obs-1 exporter 小缺口） |
+| 靜態複核 — C1-C8 / G1-G7 | ✅ 全對齊 |
+| **實機 T1**（正常停止流程） | 🔴 **FAIL** — Bug #13 + #14 |
+| **實機 T6**（Bug #12 log） | ✅ **PASS** — 整輪無 `async generator ignored GeneratorExit` |
+| **實機 I1**（必落盤） | ✅ 兩次 session 皆 save 到 `data/sessions/` |
+| 實機 I2（ready 前 final summary） | ⚠️ status 表象成立但 UI 不閉環（Bug #14） |
+| 實機 I3（cancel 安全網） | 🔴 watchdog 實質失效（Bug #13） |
+| 實機 I5（UI mode SSoT=status） | 🔴 UI 永不切 review |
+| 實機 I6（status 唯一入口） | ✅（不含 Obs-1 舊代碼） |
+| 實機 I7（async gen cleanup 不 yield） | ✅（Bug #12 實機 PASS） |
+| 實機 T2-T5 + S2/S4/S5/S9 | ⏸ T1 阻塞 |
+
+**對比第四輪**：第四輪靜態複核曾標「B1 語意偏」，本輪靜態層已無此類偏差。第四輪反思「單元綠燈 ≠ 符合 spec」在靜態層已收斂。但實機層仍能發現 Flet 生產環境 vs asyncio 模擬的 API 差異、以及 Bug #7 同類 lifecycle pattern 沒掃到 — 再次印證 Flet 相關 PR 必須有**實機 GUI + 真實 pipeline 時長**驗證。
+
+**Bug #10/#11 資料保全核心機制**：從 log 看 recorder 軟停成功、processor.run 走完 final summary + mark_ready — **資料保全層未失效**。失敗只在 watchdog（Bug #13）和 UI 轉場（Bug #14）兩個獨立層面。
+
+**Bug #12**：實機 PASS（兩次 session 含 drain + flush，log 零匹配 GeneratorExit）。
+
+**新發現 Bug**：
+- **Bug #13**：研究者架構 review 漏網之魚（沒驗 Flet `page.run_task` 回傳型別）。派 **碼農 A**，可能需研究者補 Flet async bridge 研究
+- **Bug #14**：Bug #7 殘留（只修 FeedbackView 沒掃 dashboard 其他 panel）。派 **碼農 B**
+- **Obs-3**：empty segments 降級語意強化（非阻塞）
+
+**新 invariant 建議**：I2 實機驗出「status=ready 但 UI 無轉場」的表象閉環問題。建議下版 I2 加條件「UI 轉場完成才算閉環」，送研究者評估。
+
+### 9.8 交棒大統領
+
+**派工建議**：
+
+1. **碼農 A 修 Bug #13**（優先）
+   - 推薦方案 A：輪詢 `pipeline_task.done()` + 超時呼 Flet Future.cancel
+   - 附帶 Obs-1 `mark_exported` / Obs-2 二次按停 / Obs-3 empty segments fallback
+2. **碼農 B 修 Bug #14**（優先）
+   - 推薦方案 C：全面 grep `if self.page:` pattern 掃 UI lifecycle 殘留，一次修完所有同類 bug
+3. **研究者補研究** — Flet 0.84 async bridge + lifecycle 完整映射（避免第六輪再爆同類）
+4. 三者修完後 **V Phase 第六輪**：regression → 靜態複核（加新 invariant）→ 甲方先修麥克風環境（Obs-4）→ 實機 T1-T6 + S2/S4/S5/S9
+
+**非阻塞平行**：甲方排查 Windows 麥克風設定（Obs-4）— 無有效麥克風錄音時 T1 summary 品質無法真正驗證。
+
+---
+
+**🔴 第五輪實機 FAIL — Bug #13 + #14 新發現，阻塞 Desktop 甲方簽核；Bug #10/#11/#12 資料保全層 ✅；送大統領派工**

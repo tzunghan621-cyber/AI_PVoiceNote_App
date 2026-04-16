@@ -5,7 +5,7 @@ updated: 2026-04-16
 type: bug-report
 phase: V (Verify)
 agent: 實驗者（Verifier）
-status: 🔴 阻塞中（Bug #10 + #11 + #12 — Bug #9 修復衍生資料遺失 + UI 凍結 + async gen finally-yield）
+status: 🔴 阻塞中（Bug #13 + #14 — V Phase 第五輪實機新發現：page.run_task 回傳型別不相容 + SummaryPanel mount-before-update）
 severity: high
 tags: [bug, flet, api-breakage, v-phase, pipeline-lifecycle, data-loss]
 ---
@@ -30,11 +30,12 @@ V Phase 驗證期間，連續發現 **12 個** 相關問題（Flet 0.84 + 非 Fl
 **問題類型彙整：**
 1. **唯讀 property 衝突** — Bug #1
 2. **參數名移除 / constructor 重設計** — Bug #2/#3/#4/#5/#6/#8
-3. **Lifecycle 變嚴格**（unit test 與 import smoke test 都抓不到，只有 GUI 操作才會炸）— Bug #7
+3. **Lifecycle 變嚴格**（unit test 與 import smoke test 都抓不到，只有 GUI 操作才會炸）— Bug #7、Bug #14
 4. **Pipeline / recorder lifecycle 解耦失誤** — Bug #9（與 Flet 0.84 無關，屬 app 邏輯層）
 5. **停止流程 cancel-over-drain 設計缺陷 → 資料遺失** — Bug #10（Bug #9 修復回歸）
 6. **Pipeline 架構：summarizer 與 transcribe 無背景化** — Bug #11（長期架構問題，V4 首次可觀測）
 7. **async generator `finally` 內 yield** — Bug #12（違反 Python async gen 規則）
+8. **page.run_task 回傳 concurrent.futures.Future（非 asyncio.Task）→ asyncio.shield 不相容** — Bug #13（研究者架構 review 漏網，V5 實機首次可觀測）
 
 > ⚠️ **建議**：請 Researcher 系統性掃過 Flet 0.84.0 升級指南，一次找齊所有不相容處，避免逐個踩雷。
 
@@ -820,3 +821,24 @@ Bug #1~#8 全數 Flet API / Flet 0.84 lifecycle 相關都已收斂。然而**第
 1. 派碼農 A（邏輯類，依本次任務分工）修 Bug #9
 2. 修復後 Verifier 先跑 127 fast tests，再協同甲方重跑即時錄音 5-10 分鐘
 3. 一併驗證「匯入音檔」路徑的同類 lifecycle 問題（[main.py:91-98](app/main.py#L91-L98)）
+
+---
+
+## V Phase 第五輪結語（2026-04-16 Bug #10/#11/#12 修復後重驗）
+
+Bug #12 實機驗證**通過** — 整輪 log 無 `async generator ignored GeneratorExit` warning，`audio_recorder.start` 的 flush 搬出 finally 有效。
+
+Bug #10/#11 修復的**靜態層面**全部對齊 7 invariants（見 [[verification_report_20260405#9.2]]），但**實機層面**因為 Bug #13 + #14 兩個全新的 Flet 0.84 相關問題暴露而全線無法完成：
+
+- **Bug #13**（`asyncio.shield(page.run_task result)` TypeError）：研究者架構 review 漏網 — 沒驗 Flet 0.84 下 `page.run_task` 回傳 `concurrent.futures.Future` 非 asyncio awaitable。碼農 A 的 `_stop_recording_async` 單元測試用 `asyncio.create_task` 模擬 pipeline_task 可通過，但 Flet runtime 不同
+- **Bug #14**（`SummaryPanel.update_highlights` mount 前呼叫 `self.page`）：Bug #7 同類殘留，commit `43932d3` 修 FeedbackView 時沒全面掃描
+
+**I1 + Bug #12 守住了資料** — 兩次 session 都落盤（status=ready + final summary 產生，即使是 placeholder，非資料遺失）。**但 UI 流程完全無法閉環**，甲方體感「停止按鈕沒反應 + 永遠切不到 review」。
+
+**派工建議**：
+1. **碼農 A** 修 Bug #13（方案 A 推薦：狀態輪詢取代 shield）
+2. **碼農 B** 修 Bug #14 + 全面 grep `if self.page:` pattern 掃 UI lifecycle 殘留
+3. **研究者** 補一份「Flet 0.84 async/lifecycle 完整映射研究」— 涵蓋 `page.run_task` 回傳型別、`self.page` property 嚴格化、所有未掃的 lifecycle pattern。避免第六輪再出新 bug
+4. 三者修完後 Verifier V Phase 第六輪實機 T1-T6 + S2/S4/S5/S9
+
+**環境觀察（非 bug，甲方側）**：第五輪兩次 session segments 都為空，源自甲方 Surface Pro 9 內建麥克風實際錄音振幅極低（`data/temp/chunk_0000.wav` 分析顯示 peak -52 dBFS，正常說話應 -20 ~ -10 dBFS）。VAD 全過濾是此環境訊號的合理行為。甲方需檢查 Windows 麥克風增益 / 預設 input device / 權限，才能驗 pipeline 產 segments 的路徑。**不阻塞 Bug #13/#14 修復**（修好 UI lifecycle 即可先驗 I2/I3/I5/I6 閉環；segments 真空時的 I2 退化到「final summary = placeholder ready」也可再議是否該進 aborted）。

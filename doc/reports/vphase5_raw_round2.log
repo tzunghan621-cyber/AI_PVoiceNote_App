@@ -1,0 +1,109 @@
+INFO:flet:Assets path configured: C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\assets
+INFO:flet:Starting up TCP server on localhost:60592
+INFO:flet:Flet app has started...
+INFO:flet:App URL: tcp://localhost:60592
+INFO:flet_desktop:Starting Flet View app...
+INFO:flet_desktop:Flet client found in cache: C:\Users\junk6\.flet\client\flet-desktop-full-0.84.0
+INFO:flet:App session started
+INFO:sentence_transformers.SentenceTransformer:Use pytorch device_name: cpu
+INFO:sentence_transformers.SentenceTransformer:Load pretrained SentenceTransformer: paraphrase-multilingual-MiniLM-L12-v2
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+WARNING:huggingface_hub.utils._http:Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/modules.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/config_sentence_transformers.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/config_sentence_transformers.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/README.md "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/modules.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/sentence_bert_config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/sentence_bert_config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/adapter_config.json "HTTP/1.1 404 Not Found"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/config.json "HTTP/1.1 200 OK"
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|¢i¢i¢i¢i¢i¢i¢i¢i¢i¢i| 199/199 [00:00<00:00, 3194.31it/s]
+[1mBertModel LOAD REPORT[0m from: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+Key                     | Status     |  | 
+------------------------+------------+--+-
+embeddings.position_ids | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/tokenizer_config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/tokenizer_config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/1_Pooling/config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/1_Pooling%2Fconfig.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/models/Systran/faster-whisper-small/revision/main "HTTP/1.1 200 OK"
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:10.010 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:10.010 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:10.010 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:10.010 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:10.010 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:10.010 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:10.010 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:10.010 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:10.010 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:10.010 of audio
+ERROR:concurrent.futures:exception calling callback for <Future at 0x2d0db2ecc90 state=finished raised TypeError>
+Traceback (most recent call last):
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\_base.py", line 340, in _invoke_callbacks
+    callback(self)
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\page.py", line 748, in _on_completion
+    raise exception
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\main.py", line 191, in _stop_recording_async
+    await asyncio.wait_for(asyncio.shield(task), timeout=stop_drain_timeout_sec)
+                           ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\asyncio\tasks.py", line 884, in shield
+    inner = _ensure_future(arg)
+            ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\asyncio\tasks.py", line 674, in _ensure_future
+    raise TypeError('An asyncio.Future, a coroutine or an awaitable '
+TypeError: An asyncio.Future, a coroutine or an awaitable is required
+INFO:faster_whisper:Processing audio with duration 00:05.720
+INFO:faster_whisper:VAD filter removed 00:05.720 of audio
+INFO:app.core.session_manager:Session 61d54954-93b0-464c-a29d-19d773dcad68 transition: recording ¡÷ processing (abort_reason=None)
+INFO:httpx:HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+INFO:app.core.session_manager:Session 61d54954-93b0-464c-a29d-19d773dcad68 transition: processing ¡÷ ready (abort_reason=None)
+ERROR:__main__:Recording pipeline error
+Traceback (most recent call last):
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\main.py", line 114, in _run
+    await processor.run(local_recorder.start(), session)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\core\stream_processor.py", line 149, in run
+    self.on_status_change("ready")
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\main.py", line 109, in <lambda>
+    processor.on_status_change = lambda s: _on_pipeline_done(session) if s == "ready" else None
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\main.py", line 212, in _on_pipeline_done
+    dashboard.set_mode("review", session)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 377, in set_mode
+    self._build_review()
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 571, in _build_review
+    self.summary_panel.update_highlights(self._session.summary.highlights)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 178, in update_highlights
+    if self.page:
+       ^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 279, in page
+    raise RuntimeError(
+RuntimeError: SummaryPanel(203) Control must be added to the page first
+INFO:flet:Session was garbage collected: PcrefOnBbWMgRSDu
