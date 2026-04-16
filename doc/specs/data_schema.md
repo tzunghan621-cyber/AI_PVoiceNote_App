@@ -164,8 +164,8 @@ class Session:
     created: str                  # ISO 8601 timestamp
     ended: str | None             # 錄音結束時間（會中時為 None）
     participants: list[Participant]  # 與會人員（開始時手動填 + Gemma 推斷補充）
-    mode: str                     # "live" | "review"（會中即時 / 會後編輯）
-    status: str                   # recording | processing | ready | exported
+    status: str                   # recording | processing | ready | exported | aborted
+    abort_reason: str | None      # 僅 status=aborted 時填入，如 pipeline_error / stop_timeout / ollama_failure
     audio_paths: list[str]        # WAV 分段暫存路徑（匯出後清空）
     audio_source: str             # "microphone" | "import"
     audio_duration: float         # 音檔總長度（秒，會中持續更新）
@@ -175,9 +175,15 @@ class Session:
     user_edits: UserEdits | None         # 使用者編輯的內容（會中/會後皆可）
     feedback: list[FeedbackEntry] | None # 使用者回饋
     export_path: str | None       # 匯出路徑（匯出後填入）
+
+    @property
+    def mode(self) -> str:
+        """UI 模態衍生欄位（SSoT = status）"""
+        return "live" if self.status in ("recording", "processing") else "review"
 ```
 
 > `participants` 可在開始錄音時手動填入，也可由 Gemma 在摘要週期中從逐字稿推斷補充（如出現「John 說...」）。手動填入的不會被 AI 覆蓋。
+> **SSoT 規則（G4）：** `Session.status` 為真值來源，`mode` 為衍生（recording/processing → live，其餘 → review）。所有 status 轉換應透過 `SessionManager.transition(session, new_status)` 原子化執行，不可直接賦值。
 
 ### Session 狀態流轉
 
@@ -185,23 +191,26 @@ class Session:
 [開始錄音/匯入音檔]
       │
       ▼
-  recording ──── mode: "live"
-  （串流處理中，逐字稿即時累積，摘要週期更新）
+  recording ──── mode=live
+  （串流處理中，逐字稿即時累積、摘要週期更新）
       │
-  [停止錄音/匯入完成]
-      │
-      ▼
-  processing ── 產生最終摘要
-      │
-      ▼
-  ready ──────── mode: "review"
-  （可編輯、可回饋、可匯出）
-      │
-  [匯出]
-      │
-      ▼
-  exported ──── 音檔已刪除，Session 保留供回溯
+      ├──[停止錄音/匯入完成]──┐
+      │                      ▼
+      │                 processing ── 產生最終摘要
+      │                      │
+      │                      ├──[summary 完成]──→ ready ──── mode=review
+      │                      │                      │         （可編輯、回饋、匯出）
+      │                      │                      │
+      │                      │                      └──[匯出]──→ exported
+      │                      │
+      │                      └──[summary 超時 / Ollama 失敗]──┐
+      │                                                        ▼
+      └──[Pipeline crash / cancel watchdog 觸發]──────────  aborted
+                                              abort_reason 記錄原因
+                                              mode=review（部分 segments 保留供審閱）
 ```
+
+**異常路徑規則（對應 I1 invariant）：** 任何離開 recording/processing 的路徑（含異常）都必須先將 session 落盤，再進行 UI 轉場。`aborted` 狀態的 session 仍可在 UI 審閱（部分資料），但不產 final summary。詳見 [[pipeline_lifecycle_architecture_20260416]]。
 
 ---
 
@@ -342,6 +351,9 @@ streaming:
   audio_chunk_duration_sec: 600   # 音訊暫存分段長度（秒），每 10 分鐘切段存 WAV
   summary_interval_sec: 180       # 摘要更新週期（秒），預設 3 分鐘
   summary_min_new_segments: 10    # 至少累積 N 個新 segments 才觸發摘要
+  final_summary_timeout_sec: 120  # final summary 最長等待（秒）— 超時用最近週期 summary 當 final（G2）
+  stop_drain_timeout_sec: 90      # 停止時等 pipeline drain 最長（秒）— 超時 cancel 進 aborted（G3）
+  pending_summary_wait_sec: 60    # 停止當下若 pending summary 正跑，最多等這麼久再 cancel（G3）
 
 # 音訊
 audio:
