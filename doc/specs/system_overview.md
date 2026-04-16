@@ -108,7 +108,7 @@ tags:
 
 | 模組 | 職責 | 輸入 | 輸出 |
 |------|------|------|------|
-| **AudioRecorder** | 麥克風錄音，串流輸出音訊區塊。`request_stop()` 為軟停止（設旗標，generator 於下一輪 `while` 自然退出）；消費者應 drain generator 而非靠 `task.cancel`。需真正阻塞停止請用 `wait_stopped()` | 麥克風音訊流 | 音訊區塊（串流）+ WAV 分段檔（暫存） |
+| **AudioRecorder** | 麥克風錄音，串流輸出音訊區塊。`request_stop()` 為軟停止（設旗標，generator 於下一輪 `while` 自然退出）；消費者應 drain generator 而非靠 `task.cancel`。需真正阻塞停止請用 `wait_stopped()`。另提供 `get_current_level() -> float`（當前 RMS 的 dBFS，-80~0）給 Mic Live 指示器（[[ui_spec#2.5 Mic Live 指示器]]）；以及 `start_level_probe()` / `stop_level_probe()` 無 session 的純量測模式給 Mic Test | 麥克風音訊流 | 音訊區塊（串流）+ WAV 分段檔（暫存）+ level 讀數（非串流） |
 | **AudioImporter** | 匯入外部音檔，切段後送入 Pipeline | WAV/MP3/M4A 檔案路徑 | 音訊區塊序列 + WAV 分段檔（暫存） |
 | **StreamProcessor** | 串流管線控制器，協調轉錄→校正→週期摘要 | 音訊區塊串流 | 即時 UI 更新事件 |
 | **Transcriber** | 語音轉文字，即時產出 segments | 音訊區塊 | 逐字稿 segments（即時），格式見 [[data_schema#2. 轉錄 Segment]] |

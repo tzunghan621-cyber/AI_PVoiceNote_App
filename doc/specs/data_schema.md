@@ -361,6 +361,16 @@ audio:
   channels: 1
   temp_dir: "data/temp"
 
+# UI（Mic Live 指示器，見 ui_spec §2.5）
+ui:
+  mic_indicator:
+    poll_interval_ms: 200          # UI 更新頻率
+    threshold_silent_dbfs: -40     # 以下顯示警訊
+    threshold_normal_dbfs: -30     # 以上為正常範圍下限
+    threshold_loud_dbfs: -12       # 以上為大聲
+    threshold_clipping_dbfs: -3    # 以上為爆音
+    test_duration_sec: 5           # Mic Test 模式倒數秒數
+
 # 匯出
 export:
   default_dir: ""  # 空字串時每次匯出都問使用者
