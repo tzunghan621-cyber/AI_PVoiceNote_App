@@ -266,6 +266,8 @@ def _switch_right_tab(self, idx: int):
 
 ## G. 補強研究（2026-04-09）— Lifecycle + Constructor 二輪掃描
 
+> ⚠️ **SSoT Redirect（2026-04-17）：** 本節部分結論在 V Phase 第五輪實機驗證後發現不完整（`if self.page:` 守衛實為假守衛、`page.run_task` 回傳型別未驗）。**lifecycle 議題以 [[flet_0.84_async_lifecycle_20260417]] 為單一權威來源**；本節保留供歷史脈絡。
+
 > 對應 V Phase 第三輪發現：Bug #6（Dropdown.on_change 不接受）+ Bug #7（Control must be added to the page first）。
 > 第一輪報告（§A~§F）漏掉這兩類問題，本節補齊。
 

@@ -493,7 +493,61 @@ ui:
 
 ---
 
-## 8. 視覺風格
+## 8. UI Mount Lifecycle 守則（Flet 0.84+）
+
+**背景：** Bug #7 + Bug #14 重複爆發 `if self.page:` 假守衛問題 — Flet 0.84 把 `BaseControl.page` 改為 property，未 mount 時**raise RuntimeError 而非返 None**，`if self.page:` 在 unmount 狀態下會 raise 而非短路。
+
+**守則（所有 custom control 必須遵守）：**
+
+1. **`_mounted` flag pattern**（取代所有 `if self.page:`）
+   ```python
+   class MyPanel(ft.Column):
+       def __init__(self):
+           super().__init__()
+           self._mounted = False
+
+       def did_mount(self):
+           self._mounted = True
+           # 首屏資料載入放這裡
+
+       def will_unmount(self):
+           self._mounted = False
+
+       def update_data(self, data):
+           # 先改 controls attr，不呼叫 update()
+           self._content.value = data
+           # 只有 mounted 才安全 update
+           if self._mounted:
+               self.update()
+   ```
+
+2. **`__init__` 禁止 update**
+   - 禁止：`__init__` 內呼叫 `self.update()` / `self.page.update()`
+   - 替代：只設 attr，首次資料由 `did_mount()` 觸發
+
+3. **背景 task 回 UI callback 必須守門**
+   - Summarizer fire-and-forget 完成 → update Panel：必須檢查 `_mounted`，否則 control 已 unmount 時 callback 回來直接 raise
+   - 同理適用於定時器、websocket 推送、任何跨 task 更新 UI 的場景
+
+4. **`grep "if self\.page:" app/ui/` 應為 0**
+   - 若存在必須附 comment 說明原因（極少數合理場景）
+   - 正常情況全部改 `_mounted` flag
+
+5. **UI 轉場 invariant**（延續 V5 Verifier 建議）
+   - `mode=review` 必須伴隨實際 UI 轉場完成
+   - 不可只有 `session.status=ready` 表象成立而 UI 沒切換
+
+**Contract test（G9）：** `tests/contract/test_flet_runtime_contract.py`
+- T-F1：`type(page.run_task(coro)) is concurrent.futures.Future`
+- T-F8：`MyControl().page` 未 mount 時 raise RuntimeError
+- T-F9：`did_mount` / `will_unmount` hook 被正確呼叫
+
+> 每次升版 Flet 前 CI 先跑這組 test，fail 則 block upgrade 並 trigger researcher 重 review。
+> 詳見 [[flet_0.84_async_lifecycle_20260417]] §3 + §6 + §7。
+
+---
+
+## 9. 視覺風格
 
 | 項目 | 規格 |
 |------|------|
