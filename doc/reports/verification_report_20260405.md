@@ -4,7 +4,7 @@ date: 2026-04-06
 updated: 2026-04-16
 phase: V (Verify)
 agent: 實驗者（Verifier）
-status: 🔴 第三輪 GUI 協同發現 Bug #9（Pipeline/recorder lifecycle），阻塞 S3
+status: 🔴 第四輪 GUI 協同發現 Bug #10/#11/#12（Bug #9 修復回歸 + UI 凍結 + async gen），持續阻塞 S3/S4/S5/S9
 tags: [verification, v-phase, report]
 ---
 
@@ -308,3 +308,139 @@ S3 雖失敗，但觀察到 Pipeline 在崩潰**前**的確運作：
 ---
 
 **🔴 第三輪 GUI 協同發現 Bug #9 — 阻塞 S3，待碼農 A 修復**
+
+---
+
+## 八、V Phase 第四輪（2026-04-16，碼農 A commit `b428369` 修完 Bug #9 後重驗）
+
+> 前置：[[devlog_20260416_builderA_bug9]] — 碼農 A 依 bug report §Bug #9 修復建議 A1/A2/A3/B1/C1 實作、新增 6 個 asyncio lifecycle unit tests（112 passed），明確標示「CLI 無 GUI driver → 5+ 分鐘實機錄音 + 拔 Ollama 模擬」委交 Verifier。
+> 執行：實驗者（Verifier）+ 甲方協同。
+
+### 8.1 Step 1 — Regression（Verifier autonomous）
+
+```bash
+python -m pytest -m "not slow and not real_audio" -q
+```
+
+| 結果 | 數值 |
+|---|---|
+| passed | **112**（baseline 106 + 碼農 A 新增 6 個 lifecycle tests） |
+| deselected (slow / real_audio) | 22 |
+| failed | 0 |
+| warning | 1（pydub `audioop` Py3.13 deprecation，Py3.11 無影響） |
+| 耗時 | 13.61s |
+
+✅ 無 regression。碼農 A 的 6 個新 asyncio lifecycle tests 全過。
+
+### 8.2 Step 2a — 靜態複核碼農 A diff（Verifier autonomous）
+
+對照 [[bug_report_flet_api_20260406]] §Bug #9「修復方向建議」逐項檢核 [main.py](app/main.py)：
+
+| # | 檢核項 | 位置 | 結果 |
+|---|---|---|---|
+| A1 | `except CancelledError: raise` 分流 | [main.py:90-92](app/main.py#L90-L92) | ✅ |
+| A1 | `logger.exception(...)` 完整 traceback | [main.py:94, 136](app/main.py#L94) | ✅ |
+| A1 | `finally` 無條件 `await recorder.stop()` | [main.py:96-100](app/main.py#L96-L100) | ✅ |
+| A2 | SnackBar 含 `type(e).__name__` + `duration=30000` | [main.py:54-66](app/main.py#L54-L66) | ✅ |
+| A2 | `str(e)` 空時 fallback `(無錯誤訊息)` | [main.py:57](app/main.py#L57) | ✅ |
+| A3 | `on_import_audio._run` 鏡像 | [main.py:126-145](app/main.py#L126-L145) | ✅ |
+| B1 | `pipeline_task` 保留 handle | [main.py:49, 110, 147](app/main.py#L49) | ✅ |
+| B1 | `on_stop_recording` cancel 安全網 | [main.py:149-157](app/main.py#L149-L157) | ⚠️ 實作為「預設路徑」而非「安全網」— 見 Bug #10 |
+| C1 | 錄音異常 → idle | [main.py:104](app/main.py#L104) | ✅ |
+| C1 | 匯入異常 → review | [main.py:141](app/main.py#L141) | ✅ |
+
+**觀察**：A1/A2/A3/C1 全對齊 bug report 建議。B1 的 `cancel()` 用法語意偏了，但要 GUI 實機才能驗證副作用 — 見下節。
+
+### 8.3 Step 2b — T1 實機錄音（甲方協同）
+
+**劇本**：甲方開「開始錄音」→ 錄 5+ 分鐘 → 主動按「停止錄音」。Verifier 背景啟動 `python -m app.main` + Monitor log。
+
+**實際執行**：
+
+| 觀察點 | 結果 |
+|---|---|
+| App 啟動 | ✅ TCP `localhost:55630`、Flet client OK、無 Traceback |
+| 開始錄音 → live 模式 | ✅ |
+| 前 180 秒（~3 分鐘）Pipeline 運作 | ✅ faster-whisper 連續 process 20 個 10s chunks |
+| ~180 秒後 UI 狀態 | 🔴 **逐字稿停止新增（甲方回報 2b）+ 重點/Action Items 全空白（甲方回報 2c）** |
+| log 中是否有 Pipeline error / Traceback | ❌ 無 ERROR，只有 `INFO:__main__:Recording pipeline cancelled by user`（甲方按停止後才出現） |
+| 甲方按「停止錄音」反應 | UI **直接回 idle**（而非 review） |
+| `data/sessions/` 落盤狀態 | 🔴 **空目錄** — 3 分多鐘錄音資料完全遺失 |
+| asyncio warning | 🔴 `RuntimeError: async generator ignored GeneratorExit`（Bug #9 根因 D 未消失） |
+
+#### 8.3.1 Bug #9 修復評估
+
+碼農 A 主要目標（A1/A2/A3/C1）**沒有真的被觸發驗證**：
+- Pipeline 沒崩 → `logger.exception` + SnackBar + idle 回退這條路徑沒走到
+- 單元測試 112 passed 只能證明 pattern 實作正確，不能證明實機正確
+
+**反而暴露 B1 設計副作用 → Bug #10**（見下）。
+
+#### 8.3.2 發現 Bug #10 — 正常停止 = 資料遺失 🔴🔴🔴
+
+詳見 [[bug_report_flet_api_20260406]] §Bug #10。
+
+**核心**：`on_stop_recording` 同時 `recorder.stop()` + `pipeline_task.cancel()`，cancel 比軟停止快 → `_run` 走 CancelledError → finally 回 idle → `_on_pipeline_done` 從未被呼叫 → `session_mgr.save` 沒跑。
+
+嚴重度評估：**比 Bug #9 殭屍 mode 更糟**（第三輪至少資料還在記憶體，本次直接丟失 3 分多鐘錄音）。
+
+#### 8.3.3 發現 Bug #11 — Summarizer 阻塞主迴圈 🟠
+
+詳見 [[bug_report_flet_api_20260406]] §Bug #11。
+
+**核心**：[stream_processor.py:59](app/core/stream_processor.py#L59) `await self.summarizer.generate(...)` 阻擋 `async for audio_chunk` 主迴圈 30-90s（Gemma E2B 推理時長），期間不 consume 新音訊、不產 segment。這是**架構問題**，非 Bug #9 造成，但第四輪首次觀察到。
+
+甲方會以為「掛了」→ 按停止 → 觸發 Bug #10 資料遺失。
+
+#### 8.3.4 發現 Bug #12 — async gen `finally` 內 yield 🟠
+
+詳見 [[bug_report_flet_api_20260406]] §Bug #12。
+
+**核心**：[audio_recorder.py:73-80](app/core/audio_recorder.py#L73-L80) 的 `finally: ... yield np.concatenate(transcribe_buffer)` 違反 Python async gen 規則 → `RuntimeError: async generator ignored GeneratorExit`。
+
+碼農 A 在修 Bug #9 時**預測** A+B+C 後此 warning 會自然消失，**預測錯誤**。
+
+### 8.4 Step 2c/2d + Step 3（T2/T3 + S2/S4/S5/S9）
+
+**全數未執行** — Bug #10 使「正常錄音流程」整條不可用，繼續跑只會重複浪費甲方時間驗證明知已壞的路徑。依規則「有新 bug 立刻回報大統領，不要 loop」，即刻停止驗證、回報。
+
+### 8.5 第四輪結論
+
+| 類別 | 狀態 |
+|---|---|
+| 自動化測試（fast suite） | ✅ 112/112（含碼農 A 新增 6 個） |
+| 靜態 diff 複核 | ✅ A1/A2/A3/C1 對齊，B1 語意偏 |
+| GUI S3（即時錄音）| 🔴 **FAIL** — Bug #10 資料遺失 + Bug #11 UI 凍結 |
+| Bug #9 A1/A2/A3/C1（異常路徑） | ⏸ **未驗證**（pipeline 沒崩，路徑未走） |
+| Bug #9 根因 D（asyncio warning） | 🔴 未消失 → Bug #12 |
+| GUI S2/S4/S5/S9 | ⏸ 未測（被 Bug #10 阻塞） |
+| 新 bug | 🔴🔴🔴 **Bug #10**、🟠 Bug #11、🟠 Bug #12 |
+
+### 8.6 交棒大統領
+
+依規則「有新 bug 立刻回報大統領，不要 loop」：
+
+**回報摘要**：
+
+1. **Bug #10（最優先）**：碼農 A B1 設計副作用，正常按停止 = 資料遺失 + 回 idle。嚴重違反 spec（review 模式預期）。**建議派碼農 A**（邏輯 + 原修復者）
+   - 修法：方案 A（`on_stop_recording` 不主動 cancel，讓 processor.run 自然走完 final summary）或方案 B（`await wait_for(task, timeout)` + timeout 才 cancel）
+   - 附帶：[main.py:155](app/main.py#L155) `page.run_task(recorder.stop)` 傳 coro 函式而非 coro object，方案 A/B 後要一併修
+2. **Bug #11**：summarizer 阻塞主迴圈（架構問題）。**建議派碼農 A**
+   - 修法：summarizer 丟 `asyncio.create_task` 背景跑 + `_run_summary_async` callback 更新 UI
+   - 推測：可能是第三輪 Bug #9 崩潰的真實近端誘因（summarizer + to_thread 時序衝突）
+3. **Bug #12**：`audio_recorder.start()` async gen finally-yield 違反 Python 規則。**建議派碼農 A**
+   - 修法：refactor 迴圈，殘餘音訊在 while 內 flush 後才退
+
+**建議派工順序**：Bug #10 → Bug #11 → Bug #12（順序上 #10 影響資料遺失最急；#11 修完才能再次實機驗證 #10 是否治癒；#12 可併入 #10/#11 的 PR）。
+
+**Verifier 待命**：三 bug 修完 → 跑 112 fast tests → 協同甲方 T1（5+ 分鐘錄音 + 正常停止 + 檢查 `data/sessions/`）+ T2（拔 Ollama）+ T3（匯入）+ S2/S4/S5/S9 smoke。
+
+### 8.7 Verifier 第四輪反思
+
+1. **碼農 A 單元測試通過 ≠ 功能符合 spec**：6 個 asyncio tests 驗的是「cancel → finally → idle」的 pattern 實作，但沒有任何一個 test 問：「正常按停止，預期應該進哪個 mode？」如果當時有「正常錄音 → stop → 期待 review」這條 test case，B1 的語意偏差在單元層就會被抓到。**建議未來 test 設計要比對 spec，不只比對實作 intent**。
+2. **Verifier 第三輪結語的主張再次被印證**：Flet 相關 PR 必須有 GUI + 真實 pipeline 時長實機驗證。本輪若沒有協同甲方跑到 180s summarizer 觸發點，Bug #10/#11/#12 全都抓不到。
+3. **「修 Bug 變出新 Bug」模式警訊**：V4 的 3 個新 bug 裡，Bug #10 直接源自 Bug #9 修復、Bug #12 是 Bug #9 連鎖 D 沒消失。這在 Flet 0.84 遷移的第 N 輪了，整個 Pipeline lifecycle 層可能需要 Researcher 做一次系統性架構 review 再讓碼農動手，而非繼續一個 bug 一個 bug 打補丁。建議大統領考慮這個架構 review 是否要派工。
+
+---
+
+**🔴 第四輪回報三個新 Bug — Bug #10 最急（資料遺失），全數待大統領派工**

@@ -5,9 +5,9 @@ updated: 2026-04-16
 type: bug-report
 phase: V (Verify)
 agent: 實驗者（Verifier）
-status: 🔴 阻塞中（Bug #9 — Pipeline lifecycle / recorder 未連帶停止）
+status: 🔴 阻塞中（Bug #10 + #11 + #12 — Bug #9 修復衍生資料遺失 + UI 凍結 + async gen finally-yield）
 severity: high
-tags: [bug, flet, api-breakage, v-phase, pipeline-lifecycle]
+tags: [bug, flet, api-breakage, v-phase, pipeline-lifecycle, data-loss]
 ---
 
 # Flet 0.84.0 API Breaking Changes — Bug Report
@@ -17,18 +17,24 @@ tags: [bug, flet, api-breakage, v-phase, pipeline-lifecycle]
 
 ## 摘要
 
-V Phase 驗證期間，連續發現 **9 個** 相關問題（Flet 0.84 + 非 Flet 衍生）：
+V Phase 驗證期間，連續發現 **12 個** 相關問題（Flet 0.84 + 非 Flet 衍生）：
 - Bug #1~#3：已修復（V Phase 第一輪）
 - Bug #4 + #5：Tabs/Tab 架構重設計，commit `43932d3` 全面重構修復
 - Bug #6 + #7：第二輪驗證點分頁時觸發，已修
 - Bug #8：Checkbox `label_style` 誤改 + NavigationRail 越界，commit `4831d7b` 修復
-- **Bug #9（新，2026-04-16）**：Pipeline 崩潰未連帶停止 recorder，UI 與 runtime state 失聯 — **非純 Flet API 問題，是 lifecycle / 錯誤處理設計缺陷**
+- Bug #9：Pipeline 崩潰未連帶停止 recorder，UI 殭屍 — commit `b428369` 碼農 A 修 A1/A2/A3/B1/C1
+- **Bug #10（新，2026-04-16 V4）**：Bug #9 B1 副作用 — 正常按「停止錄音」走 cancel 路徑，session **完全不落盤**（資料遺失，比第三輪殭屍態更糟）
+- **Bug #11（新，2026-04-16 V4）**：Summarizer 首次觸發（180s）時 `processor.run()` 主迴圈被整串 `await` 住，期間不 consume 音訊 / 不產新 segment / UI 逐字稿凍結 30-90 秒
+- **Bug #12（新，2026-04-16 V4）**：`audio_recorder.start()` async generator 在 `finally` 區塊 `yield` — 違反 Python 規則，造成 Bug #9 根因 D（asyncio warning）未如碼農 A 預期自動消失
 
 **問題類型彙整：**
 1. **唯讀 property 衝突** — Bug #1
 2. **參數名移除 / constructor 重設計** — Bug #2/#3/#4/#5/#6/#8
 3. **Lifecycle 變嚴格**（unit test 與 import smoke test 都抓不到，只有 GUI 操作才會炸）— Bug #7
 4. **Pipeline / recorder lifecycle 解耦失誤** — Bug #9（與 Flet 0.84 無關，屬 app 邏輯層）
+5. **停止流程 cancel-over-drain 設計缺陷 → 資料遺失** — Bug #10（Bug #9 修復回歸）
+6. **Pipeline 架構：summarizer 與 transcribe 無背景化** — Bug #11（長期架構問題，V4 首次可觀測）
+7. **async generator `finally` 內 yield** — Bug #12（違反 Python async gen 規則）
 
 > ⚠️ **建議**：請 Researcher 系統性掃過 Flet 0.84.0 升級指南，一次找齊所有不相容處，避免逐個踩雷。
 
@@ -437,6 +443,323 @@ Pipeline crash 後某路徑（可能是新的 `_run` 被觸發，或 transcriber
 | **GUI 實機跑真實錄音 3+ 分鐘** | ✅ |
 
 → 已再次驗證 [[#三輪結語#V Phase 第三輪結語]] 的觀察：**Flet 相關 PR 必須有實機 GUI + 真實 pipeline 時長驗證**，單元/冒煙不夠。
+
+---
+
+## Bug #10：正常按「停止錄音」走 cancel 路徑 → session 完全不落盤（資料遺失）🔴
+
+| 項目 | 內容 |
+|---|---|
+| 狀態 | 🔴 待修復（2026-04-16 V Phase 第四輪甲方協同錄音時觸發） |
+| 觸發 | 實機錄音 ~3 分多鐘 → 按「停止錄音」 |
+| 檔案 | [main.py:149-157](app/main.py#L149-L157)（主要）、[main.py:84-108](app/main.py#L84-L108)（副線）、[stream_processor.py:71-88](app/core/stream_processor.py#L71-L88)（`end_recording`/`mark_ready` 沒機會跑） |
+| 類別 | **邏輯層 / Pipeline lifecycle**（Bug #9 B1 修復回歸） |
+| 阻塞 | #3 即時錄音、#7 會後編輯、#8 匯出（沒 session 可編輯 / 匯出） |
+| 嚴重度 | 🟥 **最高** — 甲方實際使用時會錄一整場會議、按停止、資料全丟。比 Bug #9 殭屍態更糟（當時資料至少還在記憶體） |
+| 指派建議 | 碼農 A（Bug #9 原修復者，架構他最熟） |
+
+### 現象（V Phase 第四輪 T1 實機）
+
+- 甲方按「開始錄音」→ 實錄 ~3 分 20 秒
+- 按「停止錄音」→ UI 直接回 **idle**（「開始錄音 / 匯入音檔」首頁）
+- 預期應進 **review 模式**（底部「匯出 Markdown」按鈕、可編輯逐字稿）
+- 事後 `data/sessions/` **目錄空白** — session 完全沒落盤
+
+### log 證據
+
+```
+INFO:faster_whisper:Processing audio with duration 00:10.010  × 20 次（~200s）
+INFO:faster_whisper:VAD filter removed ...
+INFO:__main__:Recording pipeline cancelled by user    ← 單獨一行，沒 ERROR / Traceback
+```
+
+伴隨 Bug #12 的 asyncio warning（見該章節）。
+
+### 根因拆解
+
+[main.py:149-157](app/main.py#L149-L157) `on_stop_recording`（碼農 A Bug #9 B1 的實作）：
+```python
+def on_stop_recording():
+    nonlocal recorder, pipeline_task
+    if recorder:
+        page.run_task(recorder.stop)          # ① 設 _recording=False（軟停止）
+    if pipeline_task is not None and not pipeline_task.done():
+        pipeline_task.cancel()                 # ② 立刻 cancel（硬中斷）
+```
+
+**競態**：
+1. ① `recorder.stop()` 只設 flag，需要下一次 `while self._recording` 迴圈才會真的退出。意圖是讓 `async for audio_chunk` 自然收尾 → `processor.run()` 跑到 `line 71-88` 產 final summary → `_on_pipeline_done` → `session_mgr.save`
+2. ② `pipeline_task.cancel()` **立刻** 向 `_run` 拋 `CancelledError`，比 ① 的軟停止快
+3. 結果：`_run` 走 `except asyncio.CancelledError: raise` → `finally` 把 UI 切回 idle，**session 從未通過 `_on_pipeline_done` 保存**
+
+碼農 A devlog（[[devlog_20260416_builderA_bug9]]）的說明印證了這是**設計選擇**而非意外：
+> 「正常錄音中按停止 → recorder 停 + pipeline_task cancel → UI 回 idle（會跳過 final summary，這是 B1 設計選擇）」
+
+但這個設計選擇**與 spec 預期嚴重衝突**：
+
+- [[ui_spec]] 規範：錄音結束 → review 模式（可編輯 / 回饋 / 匯出）
+- [[data_schema]]#Session：session 必須有 `ready` 狀態落盤供會後審閱
+- Spec 沒有任何一處說「正常停止 = 丟棄整個 session」
+
+B1 把 `cancel()` 從「卡死安全網」誤用成「預設停止路徑」，語意翻轉。
+
+### 修復方向建議（由碼農 A 據以實作）
+
+#### 方案 A（推薦）— cancel 只當真安全網
+
+```python
+def on_stop_recording():
+    nonlocal recorder, pipeline_task
+    if recorder:
+        page.run_task(recorder.stop)
+    # 不要主動 cancel pipeline_task
+    # 讓 processor.run() 自然走完 final summary 分支
+    # _on_pipeline_done 會把 UI 切 review + save session
+```
+
+cancel 只在 **卡死偵測**（例如 N 秒後還沒進 review）時作為救命稻草，可另加一個 watchdog。
+
+#### 方案 B（若 A 風險太高）— 非同步等 drain + timeout 後才 cancel
+
+```python
+async def on_stop_recording():
+    nonlocal recorder, pipeline_task
+    if recorder:
+        await recorder.stop()  # 設 flag
+    if pipeline_task is not None and not pipeline_task.done():
+        try:
+            await asyncio.wait_for(pipeline_task, timeout=60)  # 給 final summary 60s
+        except asyncio.TimeoutError:
+            pipeline_task.cancel()  # 真卡死才 cancel
+            logger.warning("Pipeline drain timeout, forced cancel")
+```
+
+#### 附帶修改
+
+1. `_run` 的 `finally` 區塊在 cancel 路徑下，若已有 segments，也應嘗試 save session 進 review（給個「部分資料」入口）而不是直接丟 idle
+2. [main.py:155](app/main.py#L155) `page.run_task(recorder.stop)` 傳的是 **coroutine function 本體**，`run_task` 需要 coroutine **object**（應為 `recorder.stop()`）— 雖在目前 cancel 主導路徑下沒差別，改方案 A/B 後會露出來
+
+### 驗證條件（碼農 A 修完後 Verifier 重測）
+
+1. 112 fast tests 無 regression
+2. 實機錄音 5 分鐘 + 正常按「停止」→ UI 進 review 模式（非 idle）、`data/sessions/` 有檔案、session.state == `ready`
+3. 錄音中 Pipeline 真的掛 → 仍走 Bug #9 的 idle 分支（不回歸）
+4. 「停止」按鈕在任何狀態都能停（不能退到殭屍 live）
+5. 如採方案 B：drain timeout 內正常結束 → review；timeout → cancel → idle + SnackBar 提示
+
+### ⚠️ 此類 Bug 的特殊危險性
+
+| 偵測手段 | 是否能抓到 |
+|---|---|
+| 單元測試（asyncio fake recorder） | ❌ — 碼農 A 的 6 個新 tests **有測「cancel 走 finally 回 idle」**，但**沒比對 spec 預期行為**（該進 review）。tests 驗證 pattern 實作正確，但沒驗證語意正確 |
+| Import smoke / GUI 啟動 | ❌ |
+| **GUI 實機錄音 + 目視「停止後 UI 狀態」+ 檢查 `data/sessions/`** | ✅ |
+
+→ 再次證明：碼農的單元測試若只驗證「程式碼按設計跑」而非「設計符合 spec」，可以綠燈通過同時嚴重違反 spec。Verifier 必須拿 spec 當校準尺。
+
+---
+
+## Bug #11：Summarizer 觸發期間 `processor.run()` 主迴圈被阻塞 → UI 逐字稿凍結 30-90s 🟠
+
+| 項目 | 內容 |
+|---|---|
+| 狀態 | 🔴 待修復（2026-04-16 V Phase 第四輪甲方錄音時目擊） |
+| 觸發 | 錄音超過 `summary_interval_sec`（預設 180s）+ segments 數 ≥ `summary_min_new_segments`（預設 10）→ 第一次 summarizer 觸發 |
+| 檔案 | [stream_processor.py:31-69](app/core/stream_processor.py#L31-L69)（主迴圈架構） |
+| 類別 | **架構 / Pipeline 背景化設計**（非 Bug #9 造成，但 V Phase 前幾輪都沒錄到 3 分鐘以上，首次目擊） |
+| 嚴重度 | 🟨 中 — 不致命，但 UX 崩塌（甲方以為掛了）。若 Summarizer 超時 120s（httpx timeout），整個錄音段 120s 沒逐字稿 |
+| 指派建議 | 碼農 A（架構設計） |
+
+### 現象
+
+甲方 V4 T1 實機：
+- 錄音前 180s 正常：計時器跳、逐字稿持續新增、VAD log 連貫
+- 180s 左右：**逐字稿停止新增新 segment**、**會議重點 / Action Items 全程空白**
+- faster-whisper 仍 **持續** 在 log 裡 process 音訊（計時器持續跳）— 代表 recorder 還活著 chunk 還進來，只是沒人 transcribe
+- 甲方等不下去按了停止 → Bug #10 觸發
+
+### 根因（[stream_processor.py:38-69](app/core/stream_processor.py#L38-L69)）
+
+```python
+async for audio_chunk in audio_source:
+    # 1. 轉錄
+    new_segments = await asyncio.to_thread(
+        self.transcriber.transcribe_chunk, audio_chunk, chunk_id
+    )
+    ...
+    # 3. 檢查是否觸發週期摘要
+    if (elapsed >= self.summary_interval ...):
+        self._summarizing = True
+        summary = await self.summarizer.generate(...)   # ← 主迴圈被整串 await 住
+        ...
+        self._summarizing = False
+```
+
+- 整個 `async for` 迴圈 **同一個 task** 內序列執行
+- `await self.summarizer.generate(...)` 內部呼叫 `await httpx.post(Ollama)`，Ollama 在 CPU 上跑 Gemma 4 E2B 推理需 **30-90 秒**（Surface Pro 9 i7-1255U）
+- 這段期間 event loop 理論上沒 block（httpx 是真 async），但 **這個 task 的主迴圈被這行 await 擋在這裡不動**
+- 上游 `audio_source`（[audio_recorder.py:31](app/core/audio_recorder.py#L31) 的 async gen）因下游不 consume，卡在 `yield np.concatenate(transcribe_buffer)` 那行等
+- `self._audio_queue` 會累積，但沒人 transcribe_chunk 新 segments
+- UI 觀察：計時器繼續跳（由 dashboard_view 的 timer task 驅動，獨立）、VAD log 繼續（audio_callback thread）、但 `on_segment` 停止觸發
+
+### 修復方向建議
+
+#### 方案 A（推薦）— Summarizer 丟 background task，不 block 主迴圈
+
+```python
+async def run(self, audio_source, session):
+    ...
+    pending_summary_task: asyncio.Task | None = None
+    async for audio_chunk in audio_source:
+        ...
+        if (elapsed >= self.summary_interval
+                and segments_since_summary >= self.min_new_segments
+                and not self._summarizing):
+            if pending_summary_task is None or pending_summary_task.done():
+                self._summarizing = True
+                pending_summary_task = asyncio.create_task(
+                    self._run_summary_async(session, ...)
+                )
+                last_summary_time = time.time()
+                segments_since_summary = 0
+
+async def _run_summary_async(self, session, ...):
+    try:
+        summary = await self.summarizer.generate(...)
+        self.session_mgr.update_summary(session, summary)
+        if self.on_summary:
+            self.on_summary(summary)
+    finally:
+        self._summarizing = False
+```
+
+**關鍵**：主迴圈 fire-and-forget，transcribe 繼續跑；summarizer 跑完後 `on_summary` callback 更新 UI。
+
+#### 方案 B（低成本 Workaround）— 改 UI 提示
+
+目前左下 status bar 疑似沒在 summarizer 期間改狀態。至少應：
+- `on_status_change("summarizing")` 觸發時 → status bar 顯示「摘要推理中...」+ spinner
+- 讓甲方知道「卡住」不是掛，是在推理
+
+方案 B 不治本（逐字稿仍凍），但至少不會讓甲方誤判。建議兩者並行，方案 A 是治本方案。
+
+### 驗證條件
+
+1. 實機錄音 5 分鐘（跨兩次 summarizer 觸發）→ summarizer 推理期間 **逐字稿持續新增**（不凍結）
+2. `on_summary` callback 觸發時 UI 重點 / Action Items 區塊有內容
+3. 若採方案 B：status bar 在 summarizer 期間顯示推理中
+
+### ⚠️ 為什麼前三輪沒抓到
+
+- 第一/二輪：Bug #4/#5 Tabs 在進 live 模式前就崩
+- 第三輪：Bug #9 在 3 分鐘 summarizer 觸發前 pipeline 就掛（甲方後來重構回憶，當時崩潰時間點可能剛好在 180s summarizer 第一次觸發的衝擊下）
+- 第四輪：Bug #9 修了，summarizer 才第一次真的被觸發 → 暴露 Bug #11
+
+Bug #11 其實 **可能是 Bug #9 崩潰的真實近端誘因**（summarizer 阻塞 + 某個 to_thread 異常 → 整條炸）。修 Bug #11 可能連帶預防 Bug #9 再發。
+
+---
+
+## Bug #12：`audio_recorder.start()` async generator 在 `finally` 區塊 `yield` 🟠
+
+| 項目 | 內容 |
+|---|---|
+| 狀態 | 🔴 待修復（2026-04-16 V Phase 第四輪 Monitor 捕獲，Bug #9 根因 D 未如預期消失） |
+| 觸發 | `pipeline_task.cancel()` 或 `async for` 被中斷 → async gen `athrow(GeneratorExit)` 啟動 cleanup |
+| 檔案 | [audio_recorder.py:51-80](app/core/audio_recorder.py#L51-L80) |
+| 類別 | **Python async gen 規則違反** |
+| 嚴重度 | 🟩 低 — 只是 asyncio 的 `Task exception was never retrieved` warning，不致命，但污染 log，妨礙 debug |
+| 指派建議 | 碼農 A |
+
+### 現象
+
+Bug #9 修復後，V4 T1 甲方按「停止錄音」→ cancel path：
+
+```
+ERROR:asyncio:Task exception was never retrieved
+future: <Task ... coro=<<async_generator_athrow without __name__>()> 
+       exception=RuntimeError('async generator ignored GeneratorExit')>
+RuntimeError: async generator ignored GeneratorExit
+```
+
+碼農 A 在 bug_report §Bug #9 連鎖 D 預測「A+B+C 修好後應自然消失」**不成立**，warning 仍出現。
+
+### 根因（[audio_recorder.py:73-80](app/core/audio_recorder.py#L73-L80)）
+
+```python
+async def start(self) -> AsyncIterator[np.ndarray]:
+    ...
+    try:
+        while self._recording:
+            ...
+            if self._buffer_duration(transcribe_buffer) >= self.transcribe_chunk_sec:
+                yield np.concatenate(transcribe_buffer)
+                ...
+    finally:
+        stream.stop()
+        stream.close()
+        # flush 殘餘
+        if transcribe_buffer:
+            yield np.concatenate(transcribe_buffer)   # ← ❌ async gen finally 內 yield
+        if save_buffer:
+            self._save_temp(...)
+```
+
+Python 規則（[PEP 525](https://peps.python.org/pep-0525/) + Python docs）：
+> Using yield in finally blocks ... may cause unexpected behavior when the generator is closed.
+
+具體來說：
+- `GeneratorExit` 進到 generator 時，cleanup phase 的 yield 會「吃掉」`GeneratorExit`
+- Python 於是拋 `RuntimeError('async generator ignored GeneratorExit')`
+- 這就是 V Phase 第三/四輪一直看到的 warning
+
+### 修復方向建議
+
+```python
+async def start(self) -> AsyncIterator[np.ndarray]:
+    ...
+    exit_cleanly = False
+    try:
+        while self._recording:
+            ...
+        exit_cleanly = True
+    finally:
+        stream.stop()
+        stream.close()
+        # flush 殘餘：**只在正常 while 退出才 yield**，cancel/close 時放棄殘餘
+        if exit_cleanly and transcribe_buffer:
+            # 仍不能在 finally yield — 改成把殘餘透過別的管道（例如 self.final_chunk 屬性）傳出
+            self._final_chunk = np.concatenate(transcribe_buffer)
+        if save_buffer:
+            self._save_temp(np.concatenate(save_buffer), save_chunk_id)
+```
+
+或**更乾淨的重構**：不用 `finally` flush，改把 `while self._recording` 改成有 sentinel 的顯式結束迴圈，殘餘在迴圈內 yield 完才退。
+
+```python
+while True:
+    if not self._recording and self._audio_queue.empty() and not transcribe_buffer:
+        break
+    try:
+        data = await asyncio.wait_for(self._audio_queue.get(), timeout=0.5)
+    except asyncio.TimeoutError:
+        if not self._recording and transcribe_buffer:
+            yield np.concatenate(transcribe_buffer)
+            transcribe_buffer = []
+            continue
+        continue
+    ...
+```
+
+碼農 A 自選方案。
+
+### 驗證條件
+
+1. 修完後實機錄音 + 停止 → log **不再** 出現 `async generator ignored GeneratorExit`
+2. 殘餘音訊仍能進最後一個 segment（或接受丟棄 — spec 沒明確）
+
+### 跟 Bug #10 的關係
+
+Bug #10 若採方案 A（不 cancel）→ 正常路徑是 `while self._recording` 自然退 → `finally` 只做 cleanup 不 yield 就沒事。但 **真卡死 cancel 時仍會踩 Bug #12**，所以 Bug #12 獨立修才完整。
 
 ---
 
