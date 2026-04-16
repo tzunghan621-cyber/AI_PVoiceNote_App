@@ -20,10 +20,11 @@
 
 ## 開發規範
 
-遵循 [[AI協作開發規範]] v2.7-AgentTeam：
-- P-S-C-V 強制工作流 + Review Gate
-- 五角色 Agent 團隊（Director / Builder / Reviewer / Verifier / Researcher）
+遵循 [[AI協作開發規範]] v4.0-Modular：
+- 開發模式：**專業開發**（完整 P-S-C-V + 獨立 Reviewer + 完整 doc/）
+- 五角色 Agent 團隊，各角色手冊按需載入
 - **甲方 = 使用者**，**大統領 = Director (Claude)**
+- Director 手冊：[[director_handbook]]
 
 ## 角色與權責
 
