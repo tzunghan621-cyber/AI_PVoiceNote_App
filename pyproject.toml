@@ -35,4 +35,5 @@ testpaths = ["tests"]
 markers = [
     "slow: tests requiring ML model loading (run separately due to memory)",
     "real_audio: end-to-end tests against real audio fixtures (needs Ollama + models)",
+    "integration: cross-module wiring smoke tests (main.py glue, DashboardView setter)",
 ]
