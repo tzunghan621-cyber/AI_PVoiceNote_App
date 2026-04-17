@@ -1,50 +1,35 @@
-# 模型設定
-whisper:
-  model: "small"
-  language: "zh"
-  device: "cpu"
-
+audio:
+  channels: 1
+  sample_rate: 16000
+  temp_dir: data/temp
+embedding:
+  model: paraphrase-multilingual-MiniLM-L12-v2
+export:
+  default_dir: ''
+  include_corrections: true
+  include_raw_transcript: true
+feedback:
+  dir: data/feedback
+knowledge_base:
+  chroma_dir: data/chroma
+  terms_dir: data/terms
 ollama:
-  model: "gemma4:e2b"
-  base_url: "http://localhost:11434"
+  base_url: http://localhost:11434
+  model: gemma4:e2b
   options:
     num_ctx: 8192
     temperature: 0.3
-
-embedding:
-  model: "paraphrase-multilingual-MiniLM-L12-v2"
-
-# App 知識庫
-knowledge_base:
-  terms_dir: "data/terms"
-  chroma_dir: "data/chroma"
-
-# 串流處理
+sessions:
+  dir: data/sessions
 streaming:
-  transcribe_chunk_sec: 10
   audio_chunk_duration_sec: 600
+  final_summary_timeout_sec: 120
+  pending_summary_wait_sec: 60
+  stop_drain_timeout_sec: 90
   summary_interval_sec: 180
   summary_min_new_segments: 10
-  final_summary_timeout_sec: 120
-  stop_drain_timeout_sec: 90
-  pending_summary_wait_sec: 60
-
-# 音訊
-audio:
-  sample_rate: 16000
-  channels: 1
-  temp_dir: "data/temp"
-
-# 匯出
-export:
-  default_dir: ""
-  include_raw_transcript: true
-  include_corrections: true
-
-# 回饋
-feedback:
-  dir: "data/feedback"
-
-# Sessions
-sessions:
-  dir: "data/sessions"
+  transcribe_chunk_sec: 10
+whisper:
+  device: cpu
+  language: zh
+  model: small

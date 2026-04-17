@@ -1,0 +1,513 @@
+INFO:flet:Assets path configured: C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\assets
+INFO:flet:Starting up TCP server on localhost:57893
+INFO:flet:Flet app has started...
+INFO:flet:App URL: tcp://localhost:57893
+INFO:flet_desktop:Starting Flet View app...
+INFO:flet_desktop:Flet client found in cache: C:\Users\junk6\.flet\client\flet-desktop-full-0.84.0
+INFO:flet:App session started
+INFO:sentence_transformers.SentenceTransformer:Use pytorch device_name: cpu
+INFO:sentence_transformers.SentenceTransformer:Load pretrained SentenceTransformer: paraphrase-multilingual-MiniLM-L12-v2
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/modules.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/config_sentence_transformers.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+WARNING:huggingface_hub.utils._http:Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/config_sentence_transformers.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/README.md "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/modules.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/sentence_bert_config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/sentence_bert_config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/adapter_config.json "HTTP/1.1 404 Not Found"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/config.json "HTTP/1.1 200 OK"
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|¢i¢i¢i¢i¢i¢i¢i¢i¢i¢i| 199/199 [00:00<00:00, 4084.71it/s]
+[1mBertModel LOAD REPORT[0m from: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+Key                     | Status     |  | 
+------------------------+------------+--+-
+embeddings.position_ids | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/tokenizer_config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/tokenizer_config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/1_Pooling/config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/1_Pooling%2Fconfig.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/models/Systran/faster-whisper-small/revision/main "HTTP/1.1 200 OK"
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:httpx:HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.560 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.144 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.496 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.208 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.144 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:01.008 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:faster_whisper:Processing audio with duration 00:10.010
+INFO:faster_whisper:VAD filter removed 00:00.000 of audio
+INFO:httpx:HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+INFO:app.core.session_manager:Session fc46d26b-6507-4304-ae4a-1b7b77b7fc0a transition: recording ¡÷ processing (abort_reason=None)
+INFO:httpx:HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+INFO:app.core.session_manager:Session fc46d26b-6507-4304-ae4a-1b7b77b7fc0a transition: processing ¡÷ ready (abort_reason=None)
+ERROR:flet:Unhandled error in 'on_click' handler
+Traceback (most recent call last):
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 335, in dispatch_event
+    await control._trigger_event(event_name, event_data)
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 454, in _trigger_event
+    await event_handler(e)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 995, in _handle_export
+    path = await picker.save_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\services\file_picker.py", line 290, in save_file
+    return await self._invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 398, in _invoke_method
+    return await self.page.session.invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 392, in invoke_method
+    raise RuntimeError(err)
+RuntimeError: Session closed
+ERROR:flet:Unhandled error in 'on_click' handler
+Traceback (most recent call last):
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 335, in dispatch_event
+    await control._trigger_event(event_name, event_data)
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 454, in _trigger_event
+    await event_handler(e)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 995, in _handle_export
+    path = await picker.save_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\services\file_picker.py", line 290, in save_file
+    return await self._invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 398, in _invoke_method
+    return await self.page.session.invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 392, in invoke_method
+    raise RuntimeError(err)
+RuntimeError: Session closed
+ERROR:flet:Unhandled error in 'on_click' handler
+Traceback (most recent call last):
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 335, in dispatch_event
+    await control._trigger_event(event_name, event_data)
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 454, in _trigger_event
+    await event_handler(e)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 995, in _handle_export
+    path = await picker.save_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\services\file_picker.py", line 290, in save_file
+    return await self._invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 398, in _invoke_method
+    return await self.page.session.invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 392, in invoke_method
+    raise RuntimeError(err)
+RuntimeError: Session closed
+ERROR:flet:Unhandled error in 'on_click' handler
+Traceback (most recent call last):
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 335, in dispatch_event
+    await control._trigger_event(event_name, event_data)
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 454, in _trigger_event
+    await event_handler(e)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 995, in _handle_export
+    path = await picker.save_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\services\file_picker.py", line 290, in save_file
+    return await self._invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 398, in _invoke_method
+    return await self.page.session.invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 392, in invoke_method
+    raise RuntimeError(err)
+RuntimeError: Session closed
+ERROR:flet:Unhandled error in 'on_click' handler
+Traceback (most recent call last):
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 335, in dispatch_event
+    await control._trigger_event(event_name, event_data)
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 454, in _trigger_event
+    await event_handler(e)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 995, in _handle_export
+    path = await picker.save_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\services\file_picker.py", line 290, in save_file
+    return await self._invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 398, in _invoke_method
+    return await self.page.session.invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 392, in invoke_method
+    raise RuntimeError(err)
+RuntimeError: Session closed
+ERROR:flet:Unhandled error in 'on_click' handler
+Traceback (most recent call last):
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 335, in dispatch_event
+    await control._trigger_event(event_name, event_data)
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 454, in _trigger_event
+    await event_handler(e)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 995, in _handle_export
+    path = await picker.save_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\services\file_picker.py", line 290, in save_file
+    return await self._invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 398, in _invoke_method
+    return await self.page.session.invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 392, in invoke_method
+    raise RuntimeError(err)
+RuntimeError: Session closed
+ERROR:flet:Unhandled error in 'on_click' handler
+Traceback (most recent call last):
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 335, in dispatch_event
+    await control._trigger_event(event_name, event_data)
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 454, in _trigger_event
+    await event_handler(e)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 995, in _handle_export
+    path = await picker.save_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\services\file_picker.py", line 290, in save_file
+    return await self._invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 398, in _invoke_method
+    return await self.page.session.invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 392, in invoke_method
+    raise RuntimeError(err)
+RuntimeError: Session closed
+ERROR:flet:Unhandled error in 'on_click' handler
+Traceback (most recent call last):
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 335, in dispatch_event
+    await control._trigger_event(event_name, event_data)
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 454, in _trigger_event
+    await event_handler(e)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 995, in _handle_export
+    path = await picker.save_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\services\file_picker.py", line 290, in save_file
+    return await self._invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 398, in _invoke_method
+    return await self.page.session.invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 392, in invoke_method
+    raise RuntimeError(err)
+RuntimeError: Session closed
+ERROR:flet:Unhandled error in 'on_click' handler
+Traceback (most recent call last):
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 335, in dispatch_event
+    await control._trigger_event(event_name, event_data)
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 454, in _trigger_event
+    await event_handler(e)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 995, in _handle_export
+    path = await picker.save_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\services\file_picker.py", line 290, in save_file
+    return await self._invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 398, in _invoke_method
+    return await self.page.session.invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 392, in invoke_method
+    raise RuntimeError(err)
+RuntimeError: Session closed
+ERROR:flet:Unhandled error in 'on_click' handler
+Traceback (most recent call last):
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 335, in dispatch_event
+    await control._trigger_event(event_name, event_data)
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 454, in _trigger_event
+    await event_handler(e)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 995, in _handle_export
+    path = await picker.save_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\services\file_picker.py", line 290, in save_file
+    return await self._invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 398, in _invoke_method
+    return await self.page.session.invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 392, in invoke_method
+    raise RuntimeError(err)
+RuntimeError: Session closed
+ERROR:flet:Unhandled error in 'on_click' handler
+Traceback (most recent call last):
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 335, in dispatch_event
+    await control._trigger_event(event_name, event_data)
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 454, in _trigger_event
+    await event_handler(e)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 995, in _handle_export
+    path = await picker.save_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\services\file_picker.py", line 290, in save_file
+    return await self._invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 398, in _invoke_method
+    return await self.page.session.invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 392, in invoke_method
+    raise RuntimeError(err)
+RuntimeError: Session closed
+ERROR:flet:Unhandled error in 'on_click' handler
+Traceback (most recent call last):
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 335, in dispatch_event
+    await control._trigger_event(event_name, event_data)
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 454, in _trigger_event
+    await event_handler(e)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 995, in _handle_export
+    path = await picker.save_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\services\file_picker.py", line 290, in save_file
+    return await self._invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 398, in _invoke_method
+    return await self.page.session.invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 392, in invoke_method
+    raise RuntimeError(err)
+RuntimeError: Session closed
+ERROR:flet:Unhandled error in 'on_click' handler
+Traceback (most recent call last):
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 335, in dispatch_event
+    await control._trigger_event(event_name, event_data)
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 454, in _trigger_event
+    await event_handler(e)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 995, in _handle_export
+    path = await picker.save_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\services\file_picker.py", line 290, in save_file
+    return await self._invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 398, in _invoke_method
+    return await self.page.session.invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 392, in invoke_method
+    raise RuntimeError(err)
+RuntimeError: Session closed
+ERROR:flet:Unhandled error in 'on_click' handler
+Traceback (most recent call last):
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 335, in dispatch_event
+    await control._trigger_event(event_name, event_data)
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 454, in _trigger_event
+    await event_handler(e)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 995, in _handle_export
+    path = await picker.save_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\services\file_picker.py", line 290, in save_file
+    return await self._invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 398, in _invoke_method
+    return await self.page.session.invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 392, in invoke_method
+    raise RuntimeError(err)
+RuntimeError: Session closed
+ERROR:flet:Unhandled error in 'on_click' handler
+Traceback (most recent call last):
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 335, in dispatch_event
+    await control._trigger_event(event_name, event_data)
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 454, in _trigger_event
+    await event_handler(e)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 995, in _handle_export
+    path = await picker.save_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\services\file_picker.py", line 290, in save_file
+    return await self._invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 398, in _invoke_method
+    return await self.page.session.invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 392, in invoke_method
+    raise RuntimeError(err)
+RuntimeError: Session closed
+ERROR:flet:Unhandled error in 'on_click' handler
+Traceback (most recent call last):
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 335, in dispatch_event
+    await control._trigger_event(event_name, event_data)
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 454, in _trigger_event
+    await event_handler(e)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 995, in _handle_export
+    path = await picker.save_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\services\file_picker.py", line 290, in save_file
+    return await self._invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 398, in _invoke_method
+    return await self.page.session.invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 392, in invoke_method
+    raise RuntimeError(err)
+RuntimeError: Session closed
+ERROR:flet:Unhandled error in 'on_click' handler
+Traceback (most recent call last):
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 335, in dispatch_event
+    await control._trigger_event(event_name, event_data)
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 454, in _trigger_event
+    await event_handler(e)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 995, in _handle_export
+    path = await picker.save_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\services\file_picker.py", line 290, in save_file
+    return await self._invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 398, in _invoke_method
+    return await self.page.session.invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 392, in invoke_method
+    raise RuntimeError(err)
+RuntimeError: Session closed
+ERROR:flet:Unhandled error in 'on_click' handler
+Traceback (most recent call last):
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 335, in dispatch_event
+    await control._trigger_event(event_name, event_data)
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 454, in _trigger_event
+    await event_handler(e)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 995, in _handle_export
+    path = await picker.save_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\services\file_picker.py", line 290, in save_file
+    return await self._invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 398, in _invoke_method
+    return await self.page.session.invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 392, in invoke_method
+    raise RuntimeError(err)
+RuntimeError: Session closed
+ERROR:flet:Unhandled error in 'on_click' handler
+Traceback (most recent call last):
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 335, in dispatch_event
+    await control._trigger_event(event_name, event_data)
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 454, in _trigger_event
+    await event_handler(e)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 995, in _handle_export
+    path = await picker.save_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\services\file_picker.py", line 290, in save_file
+    return await self._invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 398, in _invoke_method
+    return await self.page.session.invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 392, in invoke_method
+    raise RuntimeError(err)
+RuntimeError: Session closed
+ERROR:flet:Unhandled error in 'on_click' handler
+Traceback (most recent call last):
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 335, in dispatch_event
+    await control._trigger_event(event_name, event_data)
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 454, in _trigger_event
+    await event_handler(e)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 995, in _handle_export
+    path = await picker.save_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\services\file_picker.py", line 290, in save_file
+    return await self._invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 398, in _invoke_method
+    return await self.page.session.invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 392, in invoke_method
+    raise RuntimeError(err)
+RuntimeError: Session closed
+ERROR:flet:Unhandled error in 'on_click' handler
+Traceback (most recent call last):
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 335, in dispatch_event
+    await control._trigger_event(event_name, event_data)
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 454, in _trigger_event
+    await event_handler(e)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 995, in _handle_export
+    path = await picker.save_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\services\file_picker.py", line 290, in save_file
+    return await self._invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 398, in _invoke_method
+    return await self.page.session.invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 392, in invoke_method
+    raise RuntimeError(err)
+RuntimeError: Session closed
+INFO:flet:Session was garbage collected: i48Moqx8YDDql1HD

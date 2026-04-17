@@ -4,7 +4,7 @@ date: 2026-04-06
 updated: 2026-04-16
 phase: V (Verify)
 agent: 實驗者（Verifier）
-status: 🟡 第六輪 autonomous PASS（140 tests + 7 invariants + contract tests）+ 發現 **Bug #15 候選**（DashboardView audio_recorder late-binding）— 實機層待甲方協同
+status: 🟡 第七輪實機 Bug #13/#14/#15 + I1-I7 全 PASS；新發現 Bug #16（Gemma V2/V3 空）+ Bug #17（FilePicker save_file Session closed）— Desktop 可用性待修
 tags: [verification, v-phase, report]
 ---
 
@@ -870,3 +870,258 @@ Python name binding 規則：Dashboard 建構時收到 None 存進 `self._audio_
 - 缺點：Bug #13/#14 核心修復延後驗證；甲方要等更久
 
 **Verifier 推薦選項 A**。
+
+---
+
+## 十一、V Phase 第七輪（2026-04-17 晚，Bug #13/#14/#15 修復後實機全驗）
+
+> 前置：
+> - 碼農 B Bug #15 修復（commit `8362c69` + `9cff34e`）：方案 A setter + 方案 A1 Mic Test fallback + 新增 `tests/integration/` + `integration` pytest marker
+> - 146 fast tests（含 6 integration + contract）全綠
+> - V6 反思「contract 綠燈 ≠ 符合跨模組 wiring」由碼農 B 在 integration smoke test 層首次落地
+>
+> 執行：實驗者（Verifier）+ 甲方實機協同（2026-04-17 晚，完整 raw log: [[vphase7_raw]]）
+
+### 11.1 Step 1 — Regression（autonomous）
+
+```bash
+pytest -m "not slow and not real_audio" -q
+→ 146 passed, 22 deselected, 1 warning in 21.80s
+```
+
+✅ 無 regression。（相對 V6 baseline 140 → +6 個 integration + fallback tests）
+
+### 11.2 Step 2 — 靜態複核（autonomous）
+
+| 項目 | 位置 | 結果 |
+|---|---|---|
+| `DashboardView.set_audio_recorder` setter 存在 | [dashboard_view.py:825](app/ui/dashboard_view.py#L825) | ✅ |
+| main.py `on_start_recording` 呼叫 setter | [main.py:107](app/main.py#L107) | ✅（緊鄰 `recorder = AudioRecorder(config)` 後一行） |
+| setter 內若 poll 執行中會 stop+restart 重綁 | [dashboard_view.py:833-836](app/ui/dashboard_view.py#L833-L836) | ✅（多場錄音支援） |
+| Mic Test A1 fallback：`_audio_recorder is None` 時臨時建 | [dashboard_view.py:850-861](app/ui/dashboard_view.py#L850-L861) | ✅ `temp_recorder` + `_mic_test_temp_recorder` attr 供清理 |
+| `_stop_mic_test` 正確分流 temp vs 既有 | [dashboard_view.py:937-944](app/ui/dashboard_view.py#L937-L944) | ✅ |
+| Integration smoke test | [tests/integration/test_main_wiring.py](tests/integration/test_main_wiring.py) | ✅ 6 條：setter 存在 / 壞狀態復現 / 注入更新 / 二次 rebind / inspect main.py wiring / Mic Test A1 fallback |
+
+### 11.3 Step 3 — Bug #15 實機（Mic Test A1 fallback）✅
+
+甲方按 idle「🎤 測試麥克風」：
+- **反應**：音量條動、peak dBFS 文字顯示
+- **甲方自述**：「有動，麥克風要選對」— 用 Mic Test **即時診斷 Windows 麥克風 device 選擇**，這正是 ui_spec §2.5 設計目標
+- **對比 V5**：V5 peak -52 dBFS 全靜音、V7 調好後 VAD `removed 00:00.000`（完整 10 秒都有語音通過）
+
+**Bug #15 A1 fallback 實機 PASS ✅**。
+
+### 11.4 Step 3-4 — T1 5+ 分鐘錄音 + 停止（Bug #13 + #14 + I1-I7 核心驗證）
+
+甲方錄音約 5-6 分鐘，含：
+- 前 3 分鐘：逐字稿穩定產出（每 10 秒 chunk，VAD removed 絕大多數 0.000）
+- 3 分鐘跨過第一次週期 summary 觸發點 → **Ollama POST 200 OK 與 Whisper chunk log 並行出現** → **I4 實機 PASS**（summary task 跑時主迴圈不阻塞）
+- 5-6 分鐘跨第二次週期 summary
+- 按停止 → log 顯示 `transition: recording → processing` → ~30 秒後 `transition: processing → ready` 無 RuntimeError → UI 切 review
+
+#### 11.4.1 Session disk 側驗證
+
+Session `fc46d26b-6507-4304-ae4a-1b7b77b7fc0a.json`（42KB，V5 placeholder 2.4KB 對比）：
+
+```
+status: ready | mode: review | abort_reason: None    ← I2 + I5 + I6 ✅
+ended: 2026-04-17T23:31:40                            ← 時間戳自動補 ✅
+segments: 180                                          ← 真實逐字稿（V5 為 0）
+summary_history versions: [1, 2, 3]                   ← 2 週期 + 1 final
+summary.is_final: True | fallback_reason: None        ← 正常路徑（非 fallback）
+```
+
+#### 11.4.2 Invariants 實機覆蓋總表
+
+| Invariant | 驗證方式 | 結果 |
+|---|---|---|
+| I1（必落盤） | `data/sessions/{id}.json` 存在 + segments=180 + summary_history=3 | ✅ |
+| I2（ready 前先 final summary） | log 順序 `transition processing→ready` 前有 Ollama 200 OK + `summary.is_final=True` | ✅ + UI 實質閉環（V5 表象成立問題已修）|
+| I3（cancel 只當真卡死） | 正常停止無 `drain exceeded` / `forcing cancel` 訊息；watchdog 路徑未觸發（符合 I3 語意） | ✅ |
+| I4（summary 不阻塞 transcribe） | Ollama POST log 期間 Whisper chunk log 仍持續；主迴圈並行（Bug #11 修復實機 PASS） | ✅ |
+| I5（UI mode SSoT = status） | `session.mode` @property 衍生對：status=ready → mode=review；UI 真的切到 review | ✅ |
+| I6（status 唯一入口） | log 兩次 `transition:`（recording→processing / processing→ready），無直接 `session.status=` 行為 | ✅ |
+| I7（async gen cleanup 不 yield） | 整輪 log `grep "async generator ignored GeneratorExit" = 0` | ✅ Bug #12 實機 PASS |
+
+#### 11.4.3 Bug #13 實機
+
+- 停止按鈕按下 → log 立即顯示 `transition: recording → processing`（drain 路徑啟動）
+- 整輪 log **無** `TypeError: An asyncio.Future, a coroutine or an awaitable is required`
+- 整輪 log **無** `Pipeline drain exceeded` / `forcing cancel`
+- 輪詢方案 A（200ms poll + 10s Phase 2 硬 timeout）實機穩定
+
+**Bug #13 實機 PASS ✅**（V5 現場「停止按鈕無反應」不再現）
+
+#### 11.4.4 Bug #14 實機
+
+- `_on_pipeline_done` → `set_mode("review")` → `_build_review` → `update_highlights/decisions/set_items` 整條路徑跑完
+- log **無** `RuntimeError: Control must be added to the page first`
+- UI 真的切到 review（頂部「✅ 會議結束」+ 匯出按鈕 + 逐字稿/重點/Actions 三區塊）
+- 切左側分頁（詞條/回饋/設定/回會議）**全 OK 不炸** — Bug #14 同類殘留全面掃清（碼農 B commit `481b36e` 的 45 處 `_mounted` pattern 實機驗證）
+
+**Bug #14 實機 PASS ✅**
+
+### 11.5 Step 4 — S2/S4/S5/S9 GUI Smoke
+
+| S# | 路徑 | 結果 | 備註 |
+|---|---|---|---|
+| **S2** | 響應式佈局（拖窄→兩欄→單欄分頁→拖寬回三欄） | ✅ **PASS** | 三段式切換正常 |
+| **S4** | 匯出 Markdown FilePicker 對話框 | 🔴 **FAIL** | **Bug #17 候選**（見 §11.7） |
+| **S4a** | 匯入音檔 FilePicker（V4 曾 PASS）| ⏸ 未重測 | — |
+| **S4b** | 會議資訊對話框 | ✅ PASS | T1 開始錄音時填會議資訊流程 OK |
+| **S5** | SnackBar 錯誤訊息 | ⏸ 未觸發 | 麥克風調好後訊號正常，靜音警訊未觸發 |
+| **S9** | 拖動視窗切換三段式 | ✅ **PASS** | 含入 S2 |
+
+### 11.6 Step 5 — Bug #12 回歸確認
+
+raw log `grep` 結果：
+- `async generator ignored GeneratorExit` → **0 匹配** ✅
+- `Task exception was never retrieved` → **0 匹配** ✅
+- `RuntimeError: Control must be added to the page first` → **0 匹配**（正常停止路徑）✅
+
+（但見 §11.7 Bug #17 的 `RuntimeError: Session closed` 屬另一類，FilePicker 未加 overlay）
+
+### 11.7 新發現 Bug
+
+#### Bug #16（🔴 高）— Gemma V2/V3 週期+final summary 空內容
+
+詳見 [[bug_report_flet_api_20260406#Bug #16]]（待寫）。
+
+**現象**：session `fc46d26b-...json` 的 `summary_history`：
+
+| Version | is_final | fallback_reason | highlights | action_items | decisions | keywords | gen_time |
+|---|---|---|---|---|---|---|---|
+| V1（180s 週期） | False | None | 103 字 | 2 | 3 | 3 | 97.1s |
+| V2（360s 週期） | False | None | **0 字** | **0** | **0** | **0** | 82.6s |
+| V3（final） | True | None | **0 字** | **0** | **0** | **0** | 22.6s |
+
+V1 有完整會議重點 / Action Items / 決議事項（甲方錄音中的截圖所見）。V2 + V3 Gemma 有回應（82s / 22s，非 timeout 非 exception）但**結構化欄位全空，且 `fallback_reason: None`** — 代表 summarizer 解析 Gemma 回應後成功建出 SummaryResult 但內容空，非 fallback 路徑。
+
+**影響**：甲方按停止後 UI 從 V1 有內容被 V2/V3 空覆蓋 →「重點和 action 不見了變空白」。**Desktop 可用性致命傷**（會議結束看到空摘要）。
+
+**根因推論**：
+- 可能是增量 summary prompt 在 V2+（含前次 summary 當 context）失控，Gemma E2B 輸出空結構
+- 或是 summarizer parse 邏輯對特定輸出格式不相容，silent 回 empty SummaryResult
+- `fallback_reason: None` → stream_processor 的 `_run_final_summary` + `_build_fallback_final` 未觸發（Gemma 沒拋 exception 也沒 timeout）
+
+**不阻塞 Bug #13/#14/#15 核心**（pipeline lifecycle 全 PASS）。派工建議 **碼農 A 或研究者**：
+1. 先查 summarizer 解析邏輯 + 增量 prompt
+2. 若 Gemma 輸出本身空 → 補降級：`if parsed_summary.is_empty(): use previous version + fallback_reason="empty_parse"`
+3. 考慮是否需補 researcher review Gemma E2B 在長 context 增量場景穩定度
+
+#### Bug #17（🔴 高）— FilePicker.save_file 拋 RuntimeError: Session closed
+
+詳見 [[bug_report_flet_api_20260406#Bug #17]]（待寫）。
+
+**現象**：甲方在 review 模式按「匯出 Markdown」按鈕，UI 無任何反應。bounce 後 Monitor 抓到完整 Traceback：
+
+```
+File "app/ui/dashboard_view.py:995", _handle_export
+  await picker.save_file(...)
+File "flet/controls/services/file_picker.py:290", save_file
+File "flet/controls/base_control.py:398", _invoke_method
+File "flet/messaging/session.py:392", invoke_method
+RuntimeError: Session closed
+```
+
+**根因**：[dashboard_view.py:994](app/ui/dashboard_view.py#L994) `picker = ft.FilePicker()` 建立後**沒加到 `page.overlay`**。Flet 0.84 的 `save_file` 需透過 page message channel dispatch 到 client，picker 未 mount 到 session → RuntimeError。
+
+**同類殘留**：
+- [dashboard_view.py:539](app/ui/dashboard_view.py#L539) `_handle_import_audio` 也是 `ft.FilePicker()` 無 overlay + `pick_files`；V4 曾 PASS 但 V7 未重測 — **可能 Flet 不同版本行為差異，或 V4 當時其他路徑巧合 work**
+- [terms_view.py:157](app/ui/terms_view.py#L157) 同類
+
+**修法（給碼農 B）**：
+```python
+picker = ft.FilePicker()
+self._page_ref.overlay.append(picker)
+self._page_ref.update()
+try:
+    path = await picker.save_file(...)
+finally:
+    self._page_ref.overlay.remove(picker)
+    self._page_ref.update()
+```
+
+三處 FilePicker 都應補。**Desktop 可用性阻塞**（無法匯出 Markdown = 無法交付會議筆記）。
+
+### 11.8 Observations（非阻塞）
+
+| ID | 類別 | 說明 | 建議 |
+|---|---|---|---|
+| **Obs-5** | 會中 Mic Live 音量條 | 甲方 04:17 截圖回報「麥克風條沒動但好像有收音」— Mic Test 模式動但會中不動 | 疑 `_start_level_poll()` 在 `_build_live` 未啟動、或 setter 路徑未觸發 poll 啟動。Bug #15 setter 修好後，`_build_live` 需主動 call `_start_level_poll`。碼農 B 查 |
+| **Obs-6** | `audio_duration` 未累加 | review 頂部時長顯示 `00:00:00`，disk JSON `audio_duration: 0.0`（應 ~6 分鐘） | session_mgr 或 stream_processor 沒有更新 `session.audio_duration`（segments 有 start/end 但 Session 聚合欄位沒累加）。碼農 A 查 |
+| **Obs-7** | segment timestamp 跳 0 | 逐字稿畫面看到 `[00:00] [00:05] [00:00] [00:03]...` 時間跳回 0 | 可能 `chunk_id` 遞增但 `seg.start` 相對 chunk 本地時間，跨 chunk 沒累加。碼農 A 查 transcriber 或 stream_processor 的時間戳計算 |
+| **Obs-8** | 「按停止要等很久（>1 分鐘）」| drain 期間 UI 無視覺反饋，甲方以為 App 死掉 | 研究者 V6 §5.4 已建議「加 stopping indicator」，碼農 A 未實作。建議 Bug #17 修復時一併補 |
+
+### 11.9 第七輪結論
+
+| 類別 | 狀態 |
+|---|---|
+| 自動化測試 | ✅ 146/146 |
+| Bug #13 實機（停止按鈕反應、輪詢 drain）| ✅ PASS |
+| Bug #14 實機（review 轉場 + Lazy view 切分頁）| ✅ PASS |
+| Bug #15 實機（Mic Test A1 fallback）| ✅ PASS |
+| Bug #12 回歸（無 async gen warning） | ✅ PASS |
+| I1-I7 實機覆蓋 | ✅ **全 PASS** |
+| S2 響應式佈局 | ✅ PASS |
+| S9 拖動切換 | ✅ PASS |
+| S4 匯出對話框 | 🔴 **FAIL** — Bug #17 |
+| S4 會議資訊對話框 | ✅ PASS（T1 開始錄音流程） |
+| S5 SnackBar | ⏸ 未觸發 |
+| **Desktop 核心 pipeline lifecycle** | ✅ **完全閉環** |
+| **Desktop 可用性（交付）** | 🔴 **阻塞** — Bug #16 空摘要 + Bug #17 無法匯出 |
+
+**對比三輪演進**：
+- V5：Bug #10/#11/#12 資料保全層 OK，但 UI 層 Bug #13/#14 完全壞
+- V6：Bug #13/#14 靜態修，Bug #15 候選 Verifier 抓到
+- **V7：Bug #13/#14/#15 + I1-I7 全實機 PASS**，pipeline lifecycle 全閉環；**但摘要品質（Bug #16）+ 匯出功能（Bug #17）新暴露**
+
+**核心意義**：Desktop 版本的 **pipeline lifecycle 鋼骨已完整**。剩下 Bug #16/#17 屬於 **功能層 bugs**（摘要解析、FilePicker 使用），**不動 pipeline 架構即可修完**。
+
+### 11.10 第三層反思（V4→V5→V6→V7）
+
+V6 反思提出「contract 綠燈 ≠ 符合跨模組 wiring」，V6 碼農 B 建立 `tests/integration/` 回應。V7 實機暴露**第四層 gap**：
+
+| 層 | V 輪 | 發現 | 補的測試 |
+|---|---|---|---|
+| L1 | V4 | 單元綠燈 ≠ 符合 spec | V5 spec-level invariants tests |
+| L2 | V5 | spec 綠燈 ≠ 符合 framework runtime | V6 contract tests（T-F1~F8）|
+| L3 | V6 | contract 綠燈 ≠ 符合跨模組 wiring | V7 integration smoke tests |
+| **L4** | **V7** | **wiring 綠燈 ≠ 符合框架服務「加 overlay 才能 work」契約**（Bug #17）；**wiring 綠燈 ≠ 符合 AI 模型輸出穩定性**（Bug #16）| **建議 V8：a) Flet services contract test（FilePicker 要不要 overlay 等）b) Gemma 輸出穩定性 regression（用真實 segments 跑 summarizer 驗輸出非空）** |
+
+L4 的兩個子類型不同：
+- **L4a**：Flet 框架服務的使用慣例（FilePicker 必須在 page.overlay 中才能 `save_file`）— 屬 framework contract test 延伸
+- **L4b**：外部模型（Gemma E2B）輸出穩定性 — 屬**新類別的 regression test**（目前 summarizer test 用 fake Ollama，無法 catch Gemma 真實輸出失控）
+
+V7 反思如果未來再出 Bug #18+ 代表 L4 的覆蓋還不完整；也可能出現 L5（新維度）。
+
+### 11.11 交棒大統領
+
+**派工建議**：
+
+1. **碼農 B 修 Bug #17 FilePicker overlay**（優先阻塞甲方簽核）
+   - 三處 FilePicker（dashboard `_handle_export` + `_handle_import_audio` + terms_view `_on_import`）統一加 `page.overlay.append(picker) + page.update()` + `finally remove`
+   - 附帶修 Obs-8：drain 期間加 stopping indicator（可以 status_bar 閃爍或 dashboard 頂部短訊息）
+
+2. **碼農 A 或研究者查 Bug #16 Gemma 空摘要**（優先阻塞可用性）
+   - 先在 summarizer.py 加 log：打印 Gemma 原始回應 + parse 結果（觀察 V2/V3 Gemma 到底回了什麼）
+   - 若 Gemma 回空 → 補降級：`if parsed_summary 全空: fallback to previous version + fallback_reason="empty_parse"`
+   - 若 Gemma 回內容但 parser 吃掉 → 修 parser
+   - 獨立 PR
+
+3. **碼農 A 查 Obs-5/6/7**（非阻塞，可併入下個修復循環）
+   - Obs-5 Mic Live 會中不動 — `_build_live` 是否啟動 `_start_level_poll`
+   - Obs-6 audio_duration 未累加 — session_mgr 聚合
+   - Obs-7 segment timestamp 跳 0 — chunk_id 基準時間累加
+
+4. **Verifier V Phase 第八輪**（若上述派工修完）：
+   - Regression + 實機 T1（再次完整錄音 + 停止 + 匯出）
+   - 驗 Bug #16 修復（重錄 10 分鐘看 V2/V3 有內容）
+   - 驗 Bug #17 修復（匯出 Markdown 彈 FilePicker）
+   - 若全過 → **Desktop 版本可進甲方最終簽核**
+
+**非阻塞平行**：無需研究者。Bug #17 屬 Flet API 使用（碼農 B 可 inspect Flet source 直接修）；Bug #16 屬 summarizer/Gemma 輸出穩定（碼農 A 加 log 後可診斷）。
+
+---
+
+**🟡 V7 — pipeline lifecycle 鋼骨完整（Bug #13/#14/#15 + I1-I7 全綠）；Bug #16/#17 新發現阻塞甲方最終簽核；送大統領派工**

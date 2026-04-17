@@ -5,7 +5,7 @@ updated: 2026-04-16
 type: bug-report
 phase: V (Verify)
 agent: 實驗者（Verifier）
-status: 🟡 Bug #13/#14 已修（V6 靜態 ✅）+ 新發現 Bug #15 候選（DashboardView audio_recorder late-binding，影響 Mic Live/Test 但非 pipeline lifecycle）
+status: 🟡 Bug #13/#14/#15 V7 實機全 PASS + I1-I7 全綠；V7 新發現 Bug #16（Gemma V2/V3 空 summary）+ Bug #17（FilePicker save_file Session closed）
 severity: high
 tags: [bug, flet, api-breakage, v-phase, pipeline-lifecycle, data-loss]
 ---
@@ -37,6 +37,8 @@ V Phase 驗證期間，連續發現 **12 個** 相關問題（Flet 0.84 + 非 Fl
 7. **async generator `finally` 內 yield** — Bug #12（違反 Python async gen 規則）
 8. **page.run_task 回傳 concurrent.futures.Future（非 asyncio.Task）→ asyncio.shield 不相容** — Bug #13（研究者架構 review 漏網，V5 實機首次可觀測）
 9. **跨模組 wiring late-binding 盲點** — Bug #15（兩碼農並行協作 glue gap，V6 靜態複核抓到）
+10. **外部 AI 模型（Gemma E2B）輸出穩定性 — 增量 summary 下空 content** — Bug #16（V7 實機甲方真實 6 分鐘錄音首次暴露）
+11. **Flet 0.84 框架服務使用契約 — FilePicker 必須在 page.overlay 才能 save_file** — Bug #17（V4 pick_files 曾 PASS 但 V7 save_file 首次實機即炸）
 
 > ⚠️ **建議**：請 Researcher 系統性掃過 Flet 0.84.0 升級指南，一次找齊所有不相容處，避免逐個踩雷。
 
@@ -940,6 +942,259 @@ dashboard = DashboardView(..., audio_recorder=recorder, ...)
 | V4 | 單元綠燈 ≠ 符合 spec | V5 spec-level invariants tests |
 | V5 | spec 綠燈 ≠ 符合 framework runtime | V6 contract tests (T-F1~F8) |
 | **V6** | **contract 綠燈 ≠ 符合跨模組 wiring** | **未補（建議 V7 integration smoke test）** |
+
+---
+
+## Bug #16：Gemma E2B 增量 summary V2/V3 輸出空內容（parse 成功但欄位全空）🔴
+
+| 項目 | 內容 |
+|---|---|
+| 狀態 | 🔴 待修復（2026-04-17 V Phase 第七輪實機甲方 6 分鐘錄音首次暴露） |
+| 觸發 | 真實錄音錄超過 360 秒（第二次週期 summary 觸發點）或按停止後 final summary |
+| 檔案 | [app/core/summarizer.py](app/core/summarizer.py) — Gemma response parsing + [stream_processor.py:141-208](app/core/stream_processor.py#L141-L208) fallback 降級未觸發 |
+| 類別 | **外部 AI 模型輸出穩定性 / parser 降級邏輯** |
+| 阻塞 | Desktop 可用性（甲方按停止看到空摘要 = 無法交付會議筆記） |
+| 嚴重度 | 🟥 高 — 核心功能 silent 失效（Gemma 成功呼叫但結果空；無 exception 無 fallback） |
+| 指派建議 | **碼農 A 或研究者** — 先加 log 診斷 Gemma 原始輸出，再決定修 parser / 補降級 / 補 researcher 對 Gemma E2B 增量 prompt 穩定性的 research |
+
+### 現象
+
+甲方 V7 實機（2026-04-17）錄音約 6 分鐘：
+- **V1（180s 週期 summary）**：正常 — highlights 103 字、action_items 2 筆、decisions 3 筆、keywords 3 個、gen_time 97s
+- **V2（360s 週期 summary）**：Gemma 花 83s 回應、stream_processor 無 exception 無 timeout、fallback_reason=None，**但 highlights=""、action_items=[]、decisions=[]、keywords=[]**
+- **V3（final summary）**：Gemma 花 23s 回應（比 V2 更快）、狀態同 V2、欄位全空
+
+甲方反饋原文：**「按停止要等很久(1 分鐘以上)，但本來的重點和 action 不見了，變空白」**
+
+session JSON `fc46d26b-6507-4304-ae4a-1b7b77b7fc0a.json`：
+
+```json
+{
+  "status": "ready",
+  "summary_history": [
+    { "version": 1, "highlights": "會議主要討論如何進行「好好聊天」的技巧與方法...", ... },
+    { "version": 2, "highlights": "", "action_items": [], "decisions": [], "keywords": [],
+      "is_final": false, "fallback_reason": null, "generation_time": 82.6 },
+    { "version": 3, "highlights": "", "action_items": [], "decisions": [], "keywords": [],
+      "is_final": true,  "fallback_reason": null, "generation_time": 22.6 }
+  ],
+  "summary": {  // = summary_history[-1] = V3
+    "highlights": "", "action_items": [], ...
+  }
+}
+```
+
+甲方 UI 顯示流程：
+1. V1 完成 → `on_summary(V1)` → SummaryPanel 填入有內容 → 甲方 04:17 截圖看到完整 AI 產出
+2. V2 完成（~360s） → `on_summary(V2)` → SummaryPanel 用空字串覆蓋 → UI 變空白
+3. 甲方按停止 → V3 完成 → 再次用空字串覆蓋 → UI 仍空白
+
+### 根因推論（尚未驗證，需碼農 A 加 log）
+
+三個可能：
+
+#### 假說 A — Gemma 本身在增量 summary mode 輸出失控
+Gemma E2B 拿到「V1 summary + 新 segments」當 context，在 V2 回應沒按照 prompt 的 JSON/結構化格式產出，可能：
+- 回空字串 or 只有 whitespace
+- 回 natural language 但沒按 JSON 格式
+- 回的 JSON 欄位名不符合 parser 預期
+
+V3 final summary 用「全部 segments + V2 summary」當 context，繼承 V2 問題持續失控。
+
+#### 假說 B — summarizer parser 太寬容 silent 吃壞輸入
+[summarizer.py](app/core/summarizer.py) 的 parser（推測有 JSON.parse + try/except 包 default）在遇到壞 Gemma 輸出時**回預設空結構**而非 raise → stream_processor 收到「成功的 empty summary」→ 不走 fallback。
+
+#### 假說 C — increment prompt 設計問題
+spec [[system_overview#4.2]] 的增量 prompt 是：
+```
+前次摘要結果：{previous_summary}
+新增逐字稿段落：{new_segments}
+請更新會議重點、Action Items、決議事項。
+保留仍然有效的項目，新增或修改有變化的項目。
+```
+
+可能 Gemma 解讀「保留仍然有效的項目」時，若認為沒有變化就**回空不 output**，parser 解釋為 empty fields。
+
+**診斷第一步**：在 [summarizer.py](app/core/summarizer.py) 的 `generate()` 內加 log 打印 Gemma 原始 response string + parse 後的 SummaryResult，跑一次 V7 實機場景，觀察 V2/V3 的 raw response 內容。
+
+### 修復方向建議（依根因）
+
+#### 若假說 B 正確（parser 太寬容）
+
+```python
+# stream_processor._run_final_summary 回來後新增空白檢查
+if not summary.highlights.strip() and not summary.action_items and not summary.decisions:
+    logger.warning("Gemma summary parsed to empty — using previous version")
+    return self._build_fallback_final(session, "empty_parse")
+```
+
+這是最小修補：**把空 SummaryResult 視為 fallback 觸發條件**。對應 system_overview §6 原則 2「降級而非崩潰」原則（目前只 cover timeout/exception，empty 沒 cover）。
+
+#### 若假說 A 或 C 正確（Gemma/prompt 問題）
+
+- 調整增量 prompt 明確要求「無論是否變化都重複輸出完整結構」
+- 或改策略：final summary 不用增量（用全部 segments 從零產），降低 Gemma 失控風險
+- 可能需 researcher 補一篇 Gemma E2B 在長 context 增量場景下的穩定性研究
+
+#### 附帶：V2 + V3 皆空時如何選 fallback 來源
+
+目前 `_build_fallback_final` 用 `session.summary`（= history[-1]）當 fallback — 但 history[-1] 就是空的 V3！應改為**向前找最後一個非空 version**：
+
+```python
+def _find_last_non_empty_summary(session):
+    for h in reversed(session.summary_history):
+        if h.highlights.strip() or h.action_items or h.decisions:
+            return h
+    return None   # 全空
+```
+
+### 驗證條件（修完後 Verifier 重測）
+
+1. 146 fast tests 無 regression
+2. 新增 unit test：mock Gemma 回 empty response → summarizer 要走 fallback + `fallback_reason="empty_parse"`
+3. 新增 unit test：mock Gemma 回 whitespace-only / malformed JSON → 同上
+4. 實機：甲方重跑 6-10 分鐘錄音 → 停止 → 觀察 session.summary 非空 或 fallback_reason 有值（V1 有內容 + V2/V3 若 Gemma 失控 fallback 為 V1 複用）
+
+### 為什麼沒抓到
+
+- unit test 用 fake Ollama 固定回 valid response → 無法模擬 Gemma 真實失控
+- spec-level test 用 fake Gemma（mock summarizer）→ 同上
+- contract test 驗 Flet 框架 → 無關
+- integration smoke test 驗 main.py wiring → 無關
+- **V4-V6 實機錄音不夠長（Bug 被 #10/#11/#13/#14 阻塞），沒跑到 360s 第二次週期 summary**
+- **V7 是第一次甲方真實錄完 6 分鐘 + 停止到 final summary 的完整流程**
+
+### Verifier 三輪演進中的 L4b
+
+實驗者 V4→V5→V6→V7 反思演進：
+- L1（單元 ≠ spec）→ L2（spec ≠ framework runtime）→ L3（contract ≠ wiring）→ **L4（wiring ≠ 框架契約 / 外部模型穩定）**
+
+Bug #16 屬 **L4b — 外部模型輸出穩定性**。現有測試金字塔完全不測「Gemma 真的跑起來會不會失控」。建議 V8 補：
+- `tests/real_ai/test_gemma_summary_stability.py`（slow test、可跳過）：用 fixture 音檔經 Whisper → 真 Gemma E2B → assert summary 非空
+- summarizer.py 加「empty guard」：parse 後若核心欄位全空 → raise `EmptySummaryError` 而非回空 SummaryResult；stream_processor catch 後走 fallback
+
+---
+
+## Bug #17：FilePicker `save_file` 拋 `RuntimeError: Session closed`（未加 page.overlay）🔴
+
+| 項目 | 內容 |
+|---|---|
+| 狀態 | 🔴 待修復（2026-04-17 V Phase 第七輪實機甲方按「匯出 Markdown」首次暴露） |
+| 觸發 | review 模式按「匯出 Markdown」按鈕 → `_handle_export` → `picker.save_file(...)` |
+| 檔案 | [dashboard_view.py:990-998](app/ui/dashboard_view.py#L990-L998)（主要）+ [dashboard_view.py:538-543](app/ui/dashboard_view.py#L538-L543) `_handle_import_audio` + [terms_view.py:157](app/ui/terms_view.py#L157) 同類 |
+| 類別 | **Flet 0.84 框架服務使用契約 — FilePicker 必須在 page.overlay 才能用** |
+| 阻塞 | Desktop 可用性（甲方無法匯出 Markdown = 無法交付會議筆記） |
+| 嚴重度 | 🟥 高 — UI 無任何反饋（log 有 Traceback 但 GUI silent）|
+| 指派建議 | **碼農 B**（UI 相關，三處 FilePicker 統一修） |
+
+### 現象
+
+甲方 V7 實機（2026-04-17）review 模式按「匯出 Markdown」：
+- **UI 完全無反應**（按鈕無 hover 色變、無彈窗、工作列無新 icon）
+- 相對「提交回饋」按鈕按下去工作列有變化（甲方自述）
+
+甲方壓了 3-4 次後，Monitor 抓到完整 Traceback：
+
+```
+ERROR:flet:Unhandled error in 'on_click' handler
+Traceback (most recent call last):
+  File "...\flet\messaging\session.py", line 335, in dispatch_event
+  File "...\flet\controls\base_control.py", line 454, in _trigger_event
+  File "...\app\ui\dashboard_view.py", line 995, in _handle_export
+  File "...\flet\controls\services\file_picker.py", line 290, in save_file
+  File "...\flet\controls\base_control.py", line 398, in _invoke_method
+  File "...\flet\messaging\session.py", line 392, in invoke_method
+    raise RuntimeError(err)
+RuntimeError: Session closed
+```
+
+### 根因
+
+[dashboard_view.py:990-998](app/ui/dashboard_view.py#L990-L998)：
+
+```python
+async def _handle_export(self, e):
+    if not self._session or not self.exporter:
+        return
+    picker = ft.FilePicker()              # ← 建立 picker
+    path = await picker.save_file(        # ← 直接呼叫 save_file
+        dialog_title="匯出 Markdown",
+        ...
+    )
+```
+
+Flet 0.84 的 FilePicker 是**服務控件**（service control），呼叫 `save_file` / `pick_files` 需透過 Flet session 的 message channel 把命令 dispatch 到 client（Windows 原生對話框）。**picker 必須先在 page tree 裡**（通常加到 `page.overlay`）才能被 session 識別；否則 `_invoke_method` 找不到 session 綁定 → `RuntimeError: Session closed`。
+
+**同類殘留**（同樣 pattern 沒加 overlay）：
+- [dashboard_view.py:538-543](app/ui/dashboard_view.py#L538-L543) `_handle_import_audio` — `picker.pick_files(...)` 用於匯入音檔
+- [terms_view.py:157](app/ui/terms_view.py#L157) — 詞條 YAML 匯入
+
+注意：**`_handle_import_audio` 在 V4 第三輪 §1.4 標記為「匯入音檔對話框 ✅ PASS」**。可能原因：
+- V4 當時 Flet 版本略舊對 pick_files session 綁定較寬鬆
+- 或 V4 當時是 happy path 未觸發 session dispatch 的嚴格檢查
+- 總之 V7 `save_file` 明確炸，`pick_files` 可能也潛在有問題只是沒重測
+
+### 修復方向建議（給碼農 B）
+
+#### 統一 pattern（三處 FilePicker 都套）
+
+```python
+async def _handle_export(self, e):
+    if not self._session or not self.exporter:
+        return
+
+    picker = ft.FilePicker()
+    self._page_ref.overlay.append(picker)
+    self._page_ref.update()
+
+    try:
+        path = await picker.save_file(
+            dialog_title="匯出 Markdown",
+            file_name=f"{self._session.title}.md",
+            allowed_extensions=["md"],
+        )
+        if path:
+            self._save_user_edits()
+            self.exporter.export(self._session, path)
+            self.session_mgr.save(self._session)
+            self._show_delete_audio_dialog()
+    finally:
+        self._page_ref.overlay.remove(picker)
+        self._page_ref.update()
+```
+
+三處：
+1. [dashboard_view.py:990 `_handle_export`](app/ui/dashboard_view.py#L990)（Bug #17 現場）
+2. [dashboard_view.py:538 `_handle_import_audio`](app/ui/dashboard_view.py#L538)（V4 舊 PASS、V7 未重測，建議順手修）
+3. [terms_view.py:157](app/ui/terms_view.py#L157)（同類）
+
+### 驗證條件（修完後 Verifier 重測）
+
+1. 146 fast tests 無 regression
+2. 新增 contract test（對應 L4a）：grep `ft.FilePicker()` 在 app/ 全部出現處，驗附近必定有 `overlay.append` 呼叫
+   ```python
+   def test_all_filepicker_usages_mount_to_overlay():
+       import pathlib, re
+       for f in pathlib.Path("app").rglob("*.py"):
+           txt = f.read_text(encoding="utf-8")
+           if "ft.FilePicker()" in txt:
+               assert "overlay.append" in txt or "overlay.remove" in txt, (
+                   f"{f} has FilePicker without overlay mount"
+               )
+   ```
+3. 實機：甲方按「匯出 Markdown」→ 彈出 Windows 存檔對話框 → 選路徑 → 匯出成功
+4. 實機：甲方按「匯入音檔」→ 同類驗證（順便確認 V4 路徑 V7 仍 OK）
+
+### Verifier 三輪演進中的 L4a
+
+實驗者 V4→V5→V6→V7 反思演進：
+- L1（單元 ≠ spec）→ L2（spec ≠ framework runtime）→ L3（contract ≠ wiring）→ **L4（wiring ≠ 框架契約 / 外部模型穩定）**
+
+Bug #17 屬 **L4a — 框架服務使用契約**。現有 contract tests（T-F1/T-F8）只驗 Flet API 回傳型別 + property lifecycle，沒驗**「要怎麼用才 work」的使用慣例**（如 FilePicker 必須在 overlay）。L4a 的測試建議：**grep-based pattern test**（上面 §驗證條件 #2）檢查專案內所有同類使用點。
+
+### 附帶建議（與 Bug #17 同 PR 修）
+
+**Obs-8（實驗者 V7 §11.8）**：甲方「按停止要等很久（>1 分鐘）」— drain + Gemma final summary 耗時期間 UI 無反饋。研究者 V6 §5.4 C11 已建議「drain 期間可顯示停止中 indicator」，碼農 A 未實作。建議碼農 B 修 Bug #17 時順手在 `on_stop_recording` 觸發後 `status_bar` 或 dashboard 頂部加「處理中...」臨時提示，直到 `set_mode("review")` 時消失。
 
 ---
 
