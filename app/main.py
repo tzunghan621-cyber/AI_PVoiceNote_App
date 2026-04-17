@@ -103,6 +103,8 @@ def main(page: ft.Page):
         dashboard.set_mode("live", session)
 
         recorder = AudioRecorder(config)
+        # Bug #15：把新建 recorder 注入 dashboard（constructor 階段 recorder is None）
+        dashboard.set_audio_recorder(recorder)
         local_recorder = recorder  # finally 區塊用，避免 nonlocal 在過程中被覆蓋
 
         processor = StreamProcessor(transcriber, corrector, summarizer, session_mgr, config)

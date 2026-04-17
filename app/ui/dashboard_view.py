@@ -8,6 +8,7 @@ from typing import Callable
 
 import flet as ft
 
+from app.core.audio_recorder import AudioRecorder
 from app.core.models import (
     CorrectedSegment, SummaryResult, ActionItem, Participant,
     UserEdits, FeedbackEntry, Session,
@@ -821,12 +822,43 @@ class DashboardView(ft.Container):
         """停止 Mic Live poll"""
         self._level_poll_running = False
 
+    def set_audio_recorder(self, recorder: AudioRecorder):
+        """外部注入 AudioRecorder（Bug #15 修復）。
+
+        main.py 在 constructor 階段 recorder 仍是 None；實際 recorder 於
+        on_start_recording 時才建立。此 setter 讓 main.py 把新建的 recorder
+        注入到 dashboard 內部，避免 Python closure late-binding 陷阱。
+        """
+        self._audio_recorder = recorder
+        # 若 Mic Live poll 已在跑，重啟 binding 到新 recorder
+        if self._level_poll_running:
+            self._stop_level_poll()
+            self._start_level_poll()
+
     # ── Mic Test 模式（ui_spec §2.5 閒置預覽）──
 
     def _handle_mic_test(self, e):
-        """啟動 5 秒 Mic Test — 不建 session、不寫 WAV"""
-        if not self._audio_recorder or self._level_poll_running:
+        """啟動 5 秒 Mic Test — 不建 session、不寫 WAV。
+
+        Bug #15 A1 fallback：idle 階段 _audio_recorder 可能是 None（main.py
+        尚未進 on_start_recording），此時臨時建一個 AudioRecorder 做 probe，
+        倒數結束後在 _stop_mic_test 清理。
+        """
+        if self._level_poll_running:
             return
+
+        # A1 fallback：若尚無 recorder，臨時建一個做 probe
+        temp_recorder = None
+        if self._audio_recorder is None:
+            try:
+                temp_recorder = AudioRecorder(self.config)
+            except Exception:
+                # config 或 sounddevice 缺失時放棄測試（避免 UI dead）
+                return
+            active_recorder = temp_recorder
+        else:
+            active_recorder = self._audio_recorder
+        self._mic_test_temp_recorder = temp_recorder  # _stop_mic_test 清理用
 
         # 建立 Mic Test UI
         self._mic_test_bar = ft.ProgressBar(
@@ -857,7 +889,7 @@ class DashboardView(ft.Container):
             self._mic_test_container.update()
 
         # 啟動 probe + poll
-        self._audio_recorder.start_level_probe()
+        active_recorder.start_level_probe()
         self._level_poll_running = True
 
         async def _mic_test_loop():
@@ -866,7 +898,7 @@ class DashboardView(ft.Container):
             ticks_per_sec = int(1.0 / interval)
             tick = 0
             while self._level_poll_running and remaining > 0:
-                dbfs = self._audio_recorder.get_current_level()
+                dbfs = active_recorder.get_current_level()
                 # 更新 UI
                 normalized = max(0.0, min(1.0, (dbfs + 80) / 80))
                 self._mic_test_bar.value = normalized
@@ -899,10 +931,17 @@ class DashboardView(ft.Container):
         self._page_ref.run_task(_mic_test_loop)
 
     def _stop_mic_test(self):
-        """停止 Mic Test 模式"""
+        """停止 Mic Test 模式 — 含 A1 fallback 臨時 recorder 清理"""
         self._level_poll_running = False
-        if self._audio_recorder:
-            self._audio_recorder.stop_level_probe()
+        # 判定實際使用的 recorder：優先 temp（A1 fallback），否則既有的
+        temp = getattr(self, '_mic_test_temp_recorder', None)
+        active = temp if temp is not None else self._audio_recorder
+        if active is not None:
+            try:
+                active.stop_level_probe()
+            except Exception:
+                pass
+        self._mic_test_temp_recorder = None
         if hasattr(self, '_mic_test_container') and self._mic_test_container:
             self._mic_test_container.visible = False
             if self._mounted:
