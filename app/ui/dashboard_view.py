@@ -836,11 +836,17 @@ class DashboardView(ft.Container):
         main.py 在 constructor 階段 recorder 仍是 None；實際 recorder 於
         on_start_recording 時才建立。此 setter 讓 main.py 把新建的 recorder
         注入到 dashboard 內部，避免 Python closure late-binding 陷阱。
+
+        Obs-5（V7）：main.py on_start_recording 先 set_mode("live") → _build_live
+        → _start_level_poll，此時 _audio_recorder 仍 None → early return，
+        _level_poll_running 停在 False。接著 set_audio_recorder 注入時，
+        舊邏輯「if 已在跑才重啟」→ 永遠不會啟動 poll → 音量條卡 -80 dBFS。
+        修：只要 mode == "live"，注入 recorder 後一律重啟 poll。
         """
         self._audio_recorder = recorder
-        # 若 Mic Live poll 已在跑，重啟 binding 到新 recorder
-        if self._level_poll_running:
-            self._stop_level_poll()
+        if self._mode == "live":
+            if self._level_poll_running:
+                self._stop_level_poll()
             self._start_level_poll()
 
     # ── Mic Test 模式（ui_spec §2.5 閒置預覽）──
