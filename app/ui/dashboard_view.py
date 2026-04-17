@@ -536,17 +536,25 @@ class DashboardView(ft.Container):
         )
 
     async def _handle_import_audio(self, e):
+        # Bug #17：同 _handle_export — FilePicker 必須先掛 page.overlay
         picker = ft.FilePicker()
-        files = await picker.pick_files(
-            dialog_title="選擇音檔",
-            allowed_extensions=["wav", "mp3", "m4a"],
-        )
-        if files:
-            path = files[0].path
-            self._show_meeting_info_dialog(
-                on_confirm=lambda title, parts: self._start(title, parts, "import", path),
-                on_skip=lambda: self._start(None, [], "import", path),
+        self._page_ref.overlay.append(picker)
+        self._page_ref.update()
+        try:
+            files = await picker.pick_files(
+                dialog_title="選擇音檔",
+                allowed_extensions=["wav", "mp3", "m4a"],
             )
+            if files:
+                path = files[0].path
+                self._show_meeting_info_dialog(
+                    on_confirm=lambda title, parts: self._start(title, parts, "import", path),
+                    on_skip=lambda: self._start(None, [], "import", path),
+                )
+        finally:
+            if picker in self._page_ref.overlay:
+                self._page_ref.overlay.remove(picker)
+                self._page_ref.update()
 
     def _start(self, title, participants, source, file_path=None):
         self._recording_start = datetime.now()
@@ -991,18 +999,27 @@ class DashboardView(ft.Container):
         if not self._session or not self.exporter:
             return
 
+        # Bug #17：FilePicker 是 service control，必須先在 page.overlay
+        # 才能透過 session dispatch 到 client；否則 save_file 炸 Session closed
         picker = ft.FilePicker()
-        path = await picker.save_file(
-            dialog_title="匯出 Markdown",
-            file_name=f"{self._session.title}.md",
-            allowed_extensions=["md"],
-        )
-        if path:
-            self._save_user_edits()
-            self.exporter.export(self._session, path)
-            self.session_mgr.save(self._session)
-            # 匯出後詢問是否刪除音檔（ui_spec#7）
-            self._show_delete_audio_dialog()
+        self._page_ref.overlay.append(picker)
+        self._page_ref.update()
+        try:
+            path = await picker.save_file(
+                dialog_title="匯出 Markdown",
+                file_name=f"{self._session.title}.md",
+                allowed_extensions=["md"],
+            )
+            if path:
+                self._save_user_edits()
+                self.exporter.export(self._session, path)
+                self.session_mgr.save(self._session)
+                # 匯出後詢問是否刪除音檔（ui_spec#7）
+                self._show_delete_audio_dialog()
+        finally:
+            if picker in self._page_ref.overlay:
+                self._page_ref.overlay.remove(picker)
+                self._page_ref.update()
 
     def _show_delete_audio_dialog(self):
         def _delete(e):

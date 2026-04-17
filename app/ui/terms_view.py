@@ -154,17 +154,25 @@ class TermsView(ft.Container):
             self._show_edit_dialog(term)
 
     async def _on_import(self, e):
+        # Bug #17：FilePicker 必須先掛 page.overlay 才能用
         picker = ft.FilePicker()
-        files = await picker.pick_files(
-            dialog_title="匯入 YAML", allowed_extensions=["yaml", "yml"]
-        )
-        if files:
-            path = files[0].path
-            with open(path, "r", encoding="utf-8") as f:
-                content = f.read()
-            count = self.kb.import_yaml_batch(content)
-            self._page_ref.show_dialog(ft.SnackBar(content=ft.Text(f"已匯入 {count} 筆詞條")))
-            self.refresh()
+        self._page_ref.overlay.append(picker)
+        self._page_ref.update()
+        try:
+            files = await picker.pick_files(
+                dialog_title="匯入 YAML", allowed_extensions=["yaml", "yml"]
+            )
+            if files:
+                path = files[0].path
+                with open(path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                count = self.kb.import_yaml_batch(content)
+                self._page_ref.show_dialog(ft.SnackBar(content=ft.Text(f"已匯入 {count} 筆詞條")))
+                self.refresh()
+        finally:
+            if picker in self._page_ref.overlay:
+                self._page_ref.overlay.remove(picker)
+                self._page_ref.update()
 
     def _show_edit_dialog(self, term: dict | None):
         is_new = term is None
