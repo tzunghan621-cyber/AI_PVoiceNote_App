@@ -31,6 +31,7 @@ class TranscriptPanel(ft.Container):
     def __init__(self, editable: bool = False):
         self._editable = editable
         self._auto_scroll = True
+        self._mounted = False
         self._segments_list = ft.ListView(expand=True, spacing=2, auto_scroll=True)
         self._feedback_entries: list[FeedbackEntry] = []
 
@@ -54,6 +55,12 @@ class TranscriptPanel(ft.Container):
             padding=10,
             expand=True,
         )
+
+    def did_mount(self):
+        self._mounted = True
+
+    def will_unmount(self):
+        self._mounted = False
 
     def append(self, segment: CorrectedSegment):
         timestamp = self._format_time(segment.start)
@@ -99,7 +106,7 @@ class TranscriptPanel(ft.Container):
             padding=ft.Padding(left=4, right=4, top=3, bottom=3),
         )
         self._segments_list.controls.append(row)
-        if self._auto_scroll and self.page:
+        if self._auto_scroll and self._mounted:
             self._segments_list.update()
 
     def _on_feedback(self, e):
@@ -121,7 +128,7 @@ class TranscriptPanel(ft.Container):
     def _scroll_to_bottom(self):
         self._auto_scroll = True
         self._segments_list.auto_scroll = True
-        if self.page:
+        if self._mounted:
             self._segments_list.update()
 
     def _format_time(self, seconds: float) -> str:
@@ -137,6 +144,7 @@ class SummaryPanel(ft.Container):
 
     def __init__(self, editable: bool = False):
         self._editable = editable
+        self._mounted = False
         self._user_edited_highlights = False
         self._user_edited_decisions = False
 
@@ -165,17 +173,23 @@ class SummaryPanel(ft.Container):
             expand=True,
         )
 
+    def did_mount(self):
+        self._mounted = True
+
+    def will_unmount(self):
+        self._mounted = False
+
     def _on_highlights_changed(self, e):
         self._user_edited_highlights = True
         self._highlights_field.color = COLOR_USER_BRIGHT
-        if self.page:
+        if self._mounted:
             self._highlights_field.update()
 
     def update_highlights(self, text: str):
         if not self._user_edited_highlights:
             self._highlights_field.value = text
             self._highlights_field.color = COLOR_AI_DIM
-            if self.page:
+            if self._mounted:
                 self._highlights_field.update()
 
     def update_decisions(self, decisions: list[str]):
@@ -185,7 +199,7 @@ class SummaryPanel(ft.Container):
                 self._decisions_list.controls.append(
                     ft.Text(f"· {d}", size=13, color=COLOR_AI_DIM)
                 )
-            if self.page:
+            if self._mounted:
                 self._decisions_list.update()
 
     def get_user_edits(self) -> tuple[str | None, list[str] | None]:
@@ -202,6 +216,7 @@ class ActionsPanel(ft.Container):
 
     def __init__(self, editable: bool = False):
         self._editable = editable
+        self._mounted = False
         self._items: list[ActionItem] = []
         self._items_list = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO, expand=True)
 
@@ -225,6 +240,12 @@ class ActionsPanel(ft.Container):
             padding=10,
             expand=True,
         )
+
+    def did_mount(self):
+        self._mounted = True
+
+    def will_unmount(self):
+        self._mounted = False
 
     def merge_with_protection(self, new_actions: list[ActionItem]):
         """M-4: user_edited=True 的項目不被覆蓋"""
@@ -250,7 +271,7 @@ class ActionsPanel(ft.Container):
         self._items_list.controls.clear()
         for item in self._items:
             self._items_list.controls.append(self._build_item_row(item))
-        if self.page:
+        if self._mounted:
             self._items_list.update()
 
     def _build_item_row(self, item: ActionItem) -> ft.Container:
@@ -327,6 +348,7 @@ class DashboardView(ft.Container):
 
     def __init__(self, page: ft.Page, config, session_manager,
                  knowledge_base=None, feedback_store=None, exporter=None,
+                 audio_recorder=None,
                  on_start_recording=None, on_import_audio=None, on_stop_recording=None):
         self._page_ref = page
         self.config = config
@@ -334,14 +356,28 @@ class DashboardView(ft.Container):
         self.kb = knowledge_base
         self.feedback_store = feedback_store
         self.exporter = exporter
+        self._audio_recorder = audio_recorder
         self._on_start_recording = on_start_recording
         self._on_import_audio = on_import_audio
         self._on_stop_recording = on_stop_recording
 
         self._mode = "idle"
+        self._mounted = False
         self._session: Session | None = None
         self._recording_start: datetime | None = None
         self._timer_running = False  # [M-2] 計時器控制旗標
+        self._level_poll_running = False  # Mic Live 音量 poll
+
+        # Mic Live 指示器 config
+        mic_cfg = config if hasattr(config, 'get') else None
+        self._mic_poll_ms = (mic_cfg.get("ui.mic_indicator.poll_interval_ms", 200) if mic_cfg else 200)
+        self._mic_thresholds = {
+            "silent": (mic_cfg.get("ui.mic_indicator.threshold_silent_dbfs", -40) if mic_cfg else -40),
+            "normal": (mic_cfg.get("ui.mic_indicator.threshold_normal_dbfs", -30) if mic_cfg else -30),
+            "loud": (mic_cfg.get("ui.mic_indicator.threshold_loud_dbfs", -12) if mic_cfg else -12),
+            "clipping": (mic_cfg.get("ui.mic_indicator.threshold_clipping_dbfs", -3) if mic_cfg else -3),
+        }
+        self._mic_test_duration = (mic_cfg.get("ui.mic_indicator.test_duration_sec", 5) if mic_cfg else 5)
 
         # 面板
         self.transcript_panel: TranscriptPanel | None = None
@@ -352,6 +388,8 @@ class DashboardView(ft.Container):
         self._top_bar: ft.Container | None = None
         self._bottom_bar: ft.Container | None = None  # review 模式底部操作列
         self._timer_text: ft.Text | None = None
+        self._mic_level_bar: ft.ProgressBar | None = None  # Mic Live 音量條
+        self._mic_level_text: ft.Text | None = None  # dBFS 文字
         self._layout_container = ft.Container(expand=True)  # [M-1] 響應式佈局容器
         self._content = ft.Container(expand=True)
 
@@ -361,12 +399,19 @@ class DashboardView(ft.Container):
         super().__init__(content=self._content, expand=True, bgcolor=COLOR_BG)
         self._build_idle()
 
+    def did_mount(self):
+        self._mounted = True
+
+    def will_unmount(self):
+        self._mounted = False
+
     # ── 狀態切換 ──
 
     def set_mode(self, mode: str, session: Session | None = None):
-        # [M-2] 離開 live 時停止計時器
+        # [M-2] 離開 live 時停止計時器 + Mic Live poll
         if self._mode == "live" and mode != "live":
             self._stop_timer()
+            self._stop_level_poll()
         self._mode = mode
         self._session = session
         if mode == "idle":
@@ -375,7 +420,7 @@ class DashboardView(ft.Container):
             self._build_live()
         elif mode == "review":
             self._build_review()
-        if self.page:
+        if self._mounted:
             self._content.update()
 
     # ── idle 狀態（ui_spec#2.1）──
@@ -383,6 +428,9 @@ class DashboardView(ft.Container):
     def _build_idle(self):
         # 歷史清單
         history = self._build_history_list()
+
+        # Mic Test 區塊（預設隱藏，按按鈕時展開）
+        self._mic_test_container = ft.Container(visible=False)
 
         self._content.content = ft.Column([
             ft.Container(height=40),
@@ -404,7 +452,18 @@ class DashboardView(ft.Container):
                 ],
                 alignment=ft.MainAxisAlignment.CENTER,
             ),
-            ft.Container(height=30),
+            ft.Container(height=10),
+            ft.Row(
+                [ft.OutlinedButton(
+                    "🎤 測試麥克風",
+                    style=ft.ButtonStyle(color=COLOR_TEXT_DIM),
+                    on_click=self._handle_mic_test,
+                    height=36,
+                )],
+                alignment=ft.MainAxisAlignment.CENTER,
+            ),
+            self._mic_test_container,
+            ft.Container(height=15),
             ft.Divider(color=COLOR_SURFACE),
             ft.Text("歷史紀錄", size=14, color=COLOR_TEXT_DIM,
                      weight=ft.FontWeight.BOLD),
@@ -514,6 +573,15 @@ class DashboardView(ft.Container):
             size=11, color=COLOR_TEXT_DIM,
         )
 
+        # Mic Live 音量條（ui_spec §2.5）
+        self._mic_level_bar = ft.ProgressBar(
+            value=0, width=100, bar_height=8,
+            color=COLOR_GREEN, bgcolor=COLOR_SURFACE,
+        )
+        self._mic_level_text = ft.Text(
+            "-80 dBFS", size=10, color=COLOR_TEXT_DIM,
+        )
+
         self._top_bar = ft.Container(
             content=ft.Row([
                 ft.Container(
@@ -522,7 +590,11 @@ class DashboardView(ft.Container):
                 ),
                 ft.Text("錄音中", size=12, color=COLOR_RED),
                 self._timer_text,
-                ft.Container(width=15),
+                ft.Container(width=8),
+                ft.Text("🎤", size=14),
+                self._mic_level_bar,
+                self._mic_level_text,
+                ft.Container(width=8),
                 title_text,
                 ft.Container(width=10),
                 ft.Text("👥", size=12),
@@ -549,8 +621,9 @@ class DashboardView(ft.Container):
             self._layout_container,
         ], expand=True, spacing=0)
 
-        # [M-2] 啟動計時器
+        # [M-2] 啟動計時器 + Mic Live poll
         self._start_timer()
+        self._start_level_poll()
 
     def _handle_stop(self, e):
         if self._on_stop_recording:
@@ -635,12 +708,12 @@ class DashboardView(ft.Container):
         """監聽視窗大小變化，重新套用佈局"""
         if self._mode in ("live", "review") and self.transcript_panel:
             self._apply_responsive_layout()
-            if self.page:
+            if self._mounted:
                 self._layout_container.update()
 
     def _apply_responsive_layout(self):
         """依視窗寬度套用三段式斷點佈局（ui_spec#2.3）"""
-        width = self._page_ref.window.width if self.page and self._page_ref.window else 1400
+        width = self._page_ref.window.width if self._mounted and self._page_ref.window else 1400
 
         if width >= 1400:
             # 寬視窗：三欄並排
@@ -715,6 +788,163 @@ class DashboardView(ft.Container):
     def _stop_timer(self):
         """停止計時器"""
         self._timer_running = False
+
+    # ── Mic Live 音量 poll（ui_spec §2.5）──
+
+    def _start_level_poll(self):
+        """會中啟動 Mic Live 音量 poll，每 poll_interval_ms 更新一次"""
+        if not self._audio_recorder:
+            return
+        self._level_poll_running = True
+        interval = self._mic_poll_ms / 1000.0
+
+        async def _poll_level():
+            silent_streak = 0  # 連續靜音 tick 數
+            silent_warned = False
+            while self._level_poll_running:
+                dbfs = self._audio_recorder.get_current_level()
+                self._update_mic_level_ui(dbfs)
+                # 無障礙：靜音 > 3 秒 SnackBar 警訊
+                if dbfs < self._mic_thresholds["silent"]:
+                    silent_streak += 1
+                    if not silent_warned and silent_streak * interval >= 3.0:
+                        silent_warned = True
+                        self._show_snackbar("麥克風訊號極弱，請檢查設定")
+                else:
+                    silent_streak = 0
+                    silent_warned = False
+                await asyncio.sleep(interval)
+
+        self._page_ref.run_task(_poll_level)
+
+    def _stop_level_poll(self):
+        """停止 Mic Live poll"""
+        self._level_poll_running = False
+
+    # ── Mic Test 模式（ui_spec §2.5 閒置預覽）──
+
+    def _handle_mic_test(self, e):
+        """啟動 5 秒 Mic Test — 不建 session、不寫 WAV"""
+        if not self._audio_recorder or self._level_poll_running:
+            return
+
+        # 建立 Mic Test UI
+        self._mic_test_bar = ft.ProgressBar(
+            value=0, width=200, bar_height=12,
+            color=COLOR_GREEN, bgcolor=COLOR_SURFACE,
+        )
+        self._mic_test_dbfs_text = ft.Text(
+            "peak: -80 dBFS", size=12, color=COLOR_TEXT_DIM,
+        )
+        self._mic_test_countdown = ft.Text(
+            f"倒數 {self._mic_test_duration}s", size=14, color=COLOR_TEXT,
+        )
+        cancel_btn = ft.TextButton(
+            "取消測試", on_click=lambda _: self._stop_mic_test(),
+        )
+
+        self._mic_test_container.content = ft.Column([
+            ft.Container(height=10),
+            ft.Text("🎤 測試麥克風", size=16, weight=ft.FontWeight.BOLD,
+                     color=COLOR_TEXT),
+            self._mic_test_countdown,
+            self._mic_test_bar,
+            self._mic_test_dbfs_text,
+            cancel_btn,
+        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=6)
+        self._mic_test_container.visible = True
+        if self._mounted:
+            self._mic_test_container.update()
+
+        # 啟動 probe + poll
+        self._audio_recorder.start_level_probe()
+        self._level_poll_running = True
+
+        async def _mic_test_loop():
+            remaining = self._mic_test_duration
+            interval = self._mic_poll_ms / 1000.0
+            ticks_per_sec = int(1.0 / interval)
+            tick = 0
+            while self._level_poll_running and remaining > 0:
+                dbfs = self._audio_recorder.get_current_level()
+                # 更新 UI
+                normalized = max(0.0, min(1.0, (dbfs + 80) / 80))
+                self._mic_test_bar.value = normalized
+                t = self._mic_thresholds
+                if dbfs >= t["clipping"]:
+                    color, label = COLOR_RED, "爆音"
+                elif dbfs >= t["loud"]:
+                    color, label = COLOR_AMBER, "大聲"
+                elif dbfs >= t["normal"]:
+                    color, label = COLOR_GREEN, "正常"
+                else:
+                    color, label = COLOR_TEXT_DIM, "靜音"
+                self._mic_test_bar.color = color
+                self._mic_test_dbfs_text.value = f"peak: {dbfs:.0f} dBFS ({label})"
+                tick += 1
+                if tick >= ticks_per_sec:
+                    remaining -= 1
+                    tick = 0
+                    self._mic_test_countdown.value = f"倒數 {remaining}s"
+                if self._mounted:
+                    try:
+                        self._mic_test_bar.update()
+                        self._mic_test_dbfs_text.update()
+                        self._mic_test_countdown.update()
+                    except Exception:
+                        break
+                await asyncio.sleep(interval)
+            self._stop_mic_test()
+
+        self._page_ref.run_task(_mic_test_loop)
+
+    def _stop_mic_test(self):
+        """停止 Mic Test 模式"""
+        self._level_poll_running = False
+        if self._audio_recorder:
+            self._audio_recorder.stop_level_probe()
+        if hasattr(self, '_mic_test_container') and self._mic_test_container:
+            self._mic_test_container.visible = False
+            if self._mounted:
+                try:
+                    self._mic_test_container.update()
+                except Exception:
+                    pass
+
+    def _update_mic_level_ui(self, dbfs: float):
+        """更新音量條 UI — 顏色分級 + ProgressBar 值"""
+        if not self._mic_level_bar:
+            return
+        # dBFS -80~0 映射到 0~1
+        normalized = max(0.0, min(1.0, (dbfs + 80) / 80))
+        self._mic_level_bar.value = normalized
+
+        # 顏色分級
+        t = self._mic_thresholds
+        if dbfs >= t["clipping"]:
+            color = COLOR_RED
+            label = "爆音"
+        elif dbfs >= t["loud"]:
+            color = COLOR_AMBER
+            label = "大聲"
+        elif dbfs >= t["normal"]:
+            color = COLOR_GREEN
+            label = "正常"
+        else:
+            color = COLOR_TEXT_DIM
+            label = "靜音"
+        self._mic_level_bar.color = color
+
+        if self._mic_level_text:
+            self._mic_level_text.value = f"{dbfs:.0f} dBFS ({label})"
+
+        if self._mounted:
+            try:
+                self._mic_level_bar.update()
+                if self._mic_level_text:
+                    self._mic_level_text.update()
+            except Exception:
+                pass
 
     # ── 底部操作 ──
 

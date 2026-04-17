@@ -1,8 +1,10 @@
-"""麥克風錄音 — 雙層串流輸出"""
+"""麥克風錄音 — 雙層串流輸出 + Mic Live 指示器 level API"""
 
 from __future__ import annotations
 
 import asyncio
+import math
+from collections import deque
 from pathlib import Path
 from typing import AsyncIterator
 
@@ -23,10 +25,64 @@ class AudioRecorder:
         self._recording = False
         self._audio_queue: asyncio.Queue = asyncio.Queue()
         self._temp_paths: list[str] = []
+        # Mic Live 指示器：rolling buffer 最近 200ms RMS
+        poll_ms = config.get("ui.mic_indicator.poll_interval_ms", 200)
+        self._level_buffer_samples = int(self.sample_rate * poll_ms / 1000)
+        self._level_ring: deque[float] = deque(maxlen=self._level_buffer_samples)
+        self._current_dbfs: float = -80.0
+        # Mic Test 純量測模式
+        self._probe_running = False
+        self._probe_stream: sd.InputStream | None = None
 
     def _audio_callback(self, indata, frames, time_info, status):
-        """sounddevice 回呼，把音訊資料放入 queue"""
-        self._audio_queue.put_nowait(indata.copy())
+        """sounddevice 回呼，把音訊資料放入 queue + 更新 level ring"""
+        data = indata.copy()
+        self._audio_queue.put_nowait(data)
+        self._update_level(data)
+
+    def _probe_callback(self, indata, frames, time_info, status):
+        """Mic Test 純量測回呼，只更新 level 不送 queue"""
+        self._update_level(indata)
+
+    def _update_level(self, indata: np.ndarray):
+        """更新 rolling RMS → dBFS"""
+        flat = indata.flatten()
+        self._level_ring.extend(flat.tolist())
+        if len(self._level_ring) > 0:
+            arr = np.array(self._level_ring, dtype=np.float64)
+            rms = np.sqrt(np.mean(arr ** 2))
+            if rms > 0:
+                self._current_dbfs = max(20 * math.log10(rms), -80.0)
+            else:
+                self._current_dbfs = -80.0
+
+    def get_current_level(self) -> float:
+        """回傳當前 RMS 的 dBFS（-80 ~ 0）。給 Mic Live 指示器 UI poll 用。"""
+        return self._current_dbfs
+
+    def start_level_probe(self):
+        """啟動 Mic Test 純量測模式 — 不建 session、不寫 WAV、不送 queue。"""
+        if self._probe_running:
+            return
+        self._probe_running = True
+        self._level_ring.clear()
+        self._current_dbfs = -80.0
+        self._probe_stream = sd.InputStream(
+            samplerate=self.sample_rate,
+            channels=self.channels,
+            callback=self._probe_callback,
+        )
+        self._probe_stream.start()
+
+    def stop_level_probe(self):
+        """停止 Mic Test 純量測模式。"""
+        self._probe_running = False
+        if self._probe_stream is not None:
+            self._probe_stream.stop()
+            self._probe_stream.close()
+            self._probe_stream = None
+        self._level_ring.clear()
+        self._current_dbfs = -80.0
 
     async def start(self) -> AsyncIterator[np.ndarray]:
         """
@@ -36,6 +92,8 @@ class AudioRecorder:
         """
         self._recording = True
         self._temp_paths = []
+        self._level_ring.clear()
+        self._current_dbfs = -80.0
 
         stream = sd.InputStream(
             samplerate=self.sample_rate,
