@@ -53,6 +53,14 @@ def main(page: ft.Page):
     # ── UI 建構 ──
     main_view = MainView(config)
 
+    # Bug #18：FilePicker 是 Service，init() 時自動註冊到 page._services（需 context.page）。
+    # 必須於 main() 預建一顆共用 picker 並長期持有強引用，避免：
+    #   (a) 每次 on_click 新建 → 累積 leak（evidence: FilePicker ID 1076→1077）
+    #   (b) page.overlay.append → Service 不屬 overlay（UI Control 容器），
+    #       會繞過 ServiceRegistry，client 端 invoke_method listener 綁不到 → TimeoutException
+    #   (c) 無強引用 → ServiceRegistry.unregister_services() 依 refcount GC 把它清掉
+    file_picker = ft.FilePicker()
+
     def _show_pipeline_error(err: BaseException, origin: str):
         """彈出使用者可見的 Pipeline 錯誤提示（Bug #9 A2：訊息保證非空 + 長停留）"""
         err_type = type(err).__name__
@@ -249,6 +257,7 @@ def main(page: ft.Page):
         page=page, config=config, session_manager=session_mgr,
         knowledge_base=None, feedback_store=feedback_store, exporter=exporter,
         audio_recorder=recorder,
+        file_picker=file_picker,
         on_start_recording=on_start_recording,
         on_import_audio=on_import_audio,
         on_stop_recording=on_stop_recording,
@@ -263,11 +272,11 @@ def main(page: ft.Page):
 
         def build(self):
             _ensure_ml_modules()
-            return TermsView(page, kb)
+            return TermsView(page, kb, file_picker=file_picker)
 
         def did_mount(self):
             _ensure_ml_modules()
-            self.content = TermsView(page, kb)
+            self.content = TermsView(page, kb, file_picker=file_picker)
             self.update()
 
     class LazyFeedbackView(ft.Container):

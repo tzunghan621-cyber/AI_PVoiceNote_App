@@ -16,9 +16,11 @@ ORIGIN_ICONS = {"obsidian_sync": "🔗", "manual": "✋", "auto_suggest": "💡"
 
 
 class TermsView(ft.Container):
-    def __init__(self, page: ft.Page, knowledge_base):
+    def __init__(self, page: ft.Page, knowledge_base, file_picker: ft.FilePicker | None = None):
         self._page_ref = page
         self.kb = knowledge_base
+        # Bug #18：共用 FilePicker 由 main() 預建，避免每次按匯入都 leak 新 Service
+        self.file_picker = file_picker
         self._mounted = False
         self._search_query = ""
         self._filter_category = None
@@ -154,25 +156,35 @@ class TermsView(ft.Container):
             self._show_edit_dialog(term)
 
     async def _on_import(self, e):
-        # Bug #17：FilePicker 必須先掛 page.overlay 才能用
-        picker = ft.FilePicker()
-        self._page_ref.overlay.append(picker)
-        self._page_ref.update()
+        # Bug #18：用共用 FilePicker；異常不 propagate 到 on_click
+        if not self.file_picker:
+            self._page_ref.show_dialog(ft.SnackBar(content=ft.Text("FilePicker 未注入")))
+            return
         try:
-            files = await picker.pick_files(
+            files = await self.file_picker.pick_files(
                 dialog_title="匯入 YAML", allowed_extensions=["yaml", "yml"]
             )
-            if files:
+        except Exception as err:
+            import logging
+            logging.getLogger(__name__).exception("FilePicker.pick_files failed")
+            self._page_ref.show_dialog(
+                ft.SnackBar(content=ft.Text(f"選擇檔案失敗：{type(err).__name__}"))
+            )
+            return
+        if files:
+            try:
                 path = files[0].path
                 with open(path, "r", encoding="utf-8") as f:
                     content = f.read()
                 count = self.kb.import_yaml_batch(content)
                 self._page_ref.show_dialog(ft.SnackBar(content=ft.Text(f"已匯入 {count} 筆詞條")))
                 self.refresh()
-        finally:
-            if picker in self._page_ref.overlay:
-                self._page_ref.overlay.remove(picker)
-                self._page_ref.update()
+            except Exception as err:
+                import logging
+                logging.getLogger(__name__).exception("Terms YAML import failed")
+                self._page_ref.show_dialog(
+                    ft.SnackBar(content=ft.Text(f"匯入失敗：{type(err).__name__}"))
+                )
 
     def _show_edit_dialog(self, term: dict | None):
         is_new = term is None

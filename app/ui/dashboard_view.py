@@ -349,7 +349,7 @@ class DashboardView(ft.Container):
 
     def __init__(self, page: ft.Page, config, session_manager,
                  knowledge_base=None, feedback_store=None, exporter=None,
-                 audio_recorder=None,
+                 audio_recorder=None, file_picker: ft.FilePicker | None = None,
                  on_start_recording=None, on_import_audio=None, on_stop_recording=None):
         self._page_ref = page
         self.config = config
@@ -358,6 +358,8 @@ class DashboardView(ft.Container):
         self.feedback_store = feedback_store
         self.exporter = exporter
         self._audio_recorder = audio_recorder
+        # Bug #18：共用 FilePicker 由 main() 預建，Service 自己註冊 page._services
+        self.file_picker = file_picker
         self._on_start_recording = on_start_recording
         self._on_import_audio = on_import_audio
         self._on_stop_recording = on_stop_recording
@@ -536,25 +538,29 @@ class DashboardView(ft.Container):
         )
 
     async def _handle_import_audio(self, e):
-        # Bug #17：同 _handle_export — FilePicker 必須先掛 page.overlay
-        picker = ft.FilePicker()
-        self._page_ref.overlay.append(picker)
-        self._page_ref.update()
+        # Bug #18：用 main() 預建的共用 FilePicker（Service 自註冊）
+        if not self.file_picker:
+            self._show_snackbar("FilePicker 未注入（開發錯誤）")
+            return
         try:
-            files = await picker.pick_files(
+            files = await self.file_picker.pick_files(
                 dialog_title="選擇音檔",
                 allowed_extensions=["wav", "mp3", "m4a"],
             )
-            if files:
-                path = files[0].path
-                self._show_meeting_info_dialog(
-                    on_confirm=lambda title, parts: self._start(title, parts, "import", path),
-                    on_skip=lambda: self._start(None, [], "import", path),
-                )
-        finally:
-            if picker in self._page_ref.overlay:
-                self._page_ref.overlay.remove(picker)
-                self._page_ref.update()
+        except Exception as err:
+            # Bug #18：never let picker error kill the on_click handler
+            # （否則 Flet 會丟 "Unhandled error in 'on_click' handler"，
+            # 後續畫面即使沒當，使用者看不到反饋 → 誤以為整頁卡死）
+            import logging
+            logging.getLogger(__name__).exception("FilePicker.pick_files failed")
+            self._show_snackbar(f"選擇音檔失敗：{type(err).__name__}")
+            return
+        if files:
+            path = files[0].path
+            self._show_meeting_info_dialog(
+                on_confirm=lambda title, parts: self._start(title, parts, "import", path),
+                on_skip=lambda: self._start(None, [], "import", path),
+            )
 
     def _start(self, title, participants, source, file_path=None):
         self._recording_start = datetime.now()
@@ -1005,27 +1011,37 @@ class DashboardView(ft.Container):
         if not self._session or not self.exporter:
             return
 
-        # Bug #17：FilePicker 是 service control，必須先在 page.overlay
-        # 才能透過 session dispatch 到 client；否則 save_file 炸 Session closed
-        picker = ft.FilePicker()
-        self._page_ref.overlay.append(picker)
-        self._page_ref.update()
+        # Bug #18：用 main() 預建的共用 FilePicker。
+        # 歷史教訓：overlay.append 不是 Service 的正確註冊管道 → listener 綁不到 →
+        # TimeoutException → 異常冒出 on_click → 連帶讓 session 看起來「卡死」。
+        if not self.file_picker:
+            self._show_snackbar("FilePicker 未注入（開發錯誤）")
+            return
         try:
-            path = await picker.save_file(
+            path = await self.file_picker.save_file(
                 dialog_title="匯出 Markdown",
                 file_name=f"{self._session.title}.md",
                 allowed_extensions=["md"],
             )
-            if path:
+        except Exception as err:
+            # Bug #18 Step 3：吞掉 FilePicker 異常，讓 review 畫面維持可用
+            # （否則 Flet "Unhandled error in on_click" 後，甲方感覺整頁卡住、
+            # 只有刪除鍵能動 → 根因是例外冒出導致後續 update 未發生）
+            import logging
+            logging.getLogger(__name__).exception("FilePicker.save_file failed")
+            self._show_snackbar(f"匯出失敗：{type(err).__name__}")
+            return
+
+        if path:
+            try:
                 self._save_user_edits()
                 self.exporter.export(self._session, path)
                 self.session_mgr.save(self._session)
-                # 匯出後詢問是否刪除音檔（ui_spec#7）
                 self._show_delete_audio_dialog()
-        finally:
-            if picker in self._page_ref.overlay:
-                self._page_ref.overlay.remove(picker)
-                self._page_ref.update()
+            except Exception as err:
+                import logging
+                logging.getLogger(__name__).exception("Export post-processing failed")
+                self._show_snackbar(f"寫檔失敗：{type(err).__name__}")
 
     def _show_delete_audio_dialog(self):
         def _delete(e):

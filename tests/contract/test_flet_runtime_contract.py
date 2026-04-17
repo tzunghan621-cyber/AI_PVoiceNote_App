@@ -5,10 +5,13 @@ T-F2: SummaryPanel.update_highlights pre-mount 不 raise
 T-F3: ActionsPanel.set_items pre-mount 不 raise
 T-F4: TranscriptPanel.append pre-mount 不 raise
 T-F8: BaseControl.page 未 mount 時 raise RuntimeError（contract 守護）
-T-F10: 所有 ft.FilePicker() 建立處必須掛 page.overlay（L4a 框架服務使用契約，Bug #17）
+T-F10: ft.FilePicker() 只能在 main.py 單例建立（Bug #18：Service 不是 Control，
+       不可 overlay.append；每次 on_click 新建亦會 leak 並導致 invoke_method timeout）
+T-F11: FilePicker on_click handler 必須包 try/except，保證異常不 propagate
+       導致 review 畫面「卡死」（Bug #18 Step 3）
 
 參考：flet_0.84_async_lifecycle_20260417.md §1 + §7.2
-       bug_report_flet_api_20260406.md §Bug #17
+       bug_report_flet_api_20260406.md §Bug #17/#18
 """
 
 from __future__ import annotations
@@ -152,27 +155,36 @@ class TestFletPagePropertyContract:
             _ = panel.page
 
 
-# ─── T-F10: FilePicker 必須掛 page.overlay (L4a 框架服務使用契約) ───
+# ─── T-F10 (rev): FilePicker 只能在 main.py 單例建立 (L4a 框架服務使用契約) ───
 
-class TestFilePickerOverlayContract:
-    """T-F10：Flet 0.84 `ft.FilePicker` 是 service control，
-    呼叫 `save_file` / `pick_files` 時需透過 session message channel
-    dispatch 到 client；picker 未 mount 在 page tree（通常是 `page.overlay`）
-    會讓 `_invoke_method` 找不到 session 綁定 → `RuntimeError: Session closed`。
+class TestFilePickerSharedInstanceContract:
+    """T-F10（Bug #18 後修正版）：Flet 0.84 `ft.FilePicker` 繼承 `Service`，
+    `init()` 時會透過 `context.page._services.register_service(self)` 自動
+    註冊到 ServiceRegistry。兩條鐵律：
 
-    Bug #17（V Phase 第七輪甲方實機匯出 Markdown 首次暴露）。
+    1. **不可掛 overlay**：overlay 是 UI Control 樹，Service 不是 Control；
+       混掛會讓 client 端 service listener 綁不到 →
+       `RuntimeError: TimeoutException waiting for invoke method listener`。
+       （Bug #18 evidence log：FilePicker ID 1076, 1077 每次 on_click 累加
+       即是洩漏證據 — 每次 new instance 都新增一筆 service registration。）
 
-    防線：grep-based pattern test — 專案內所有 `ft.FilePicker()` 建立處
-    對應函式內必定出現 `overlay.append(picker)` 呼叫。此測試屬 L4a
-    （框架服務使用契約），現有 T-F1/T-F8 只驗 API 簽章 / property
-    lifecycle，不驗「要怎麼用才 work」。
+    2. **不可在 handler 內 new**：ServiceRegistry.unregister_services() 會依
+       refcount GC 掉「沒人長期持有」的 service。on_click 內 new 的 picker
+       可能在下次 update 週期被 unregister，再次呼叫就炸。
 
-    若 Flet 未來版本放寬此契約（picker 可直接呼叫 save_file 而不 mount），
-    仍可保留本 test — 它會持續防止「有人建 FilePicker 忘了 overlay」的
-    回歸，即便當下不再炸也屬 dead pattern。
+    **正解**：`main(page)` 內建立**一顆**共用 `ft.FilePicker()`，維持 module
+    區域強引用，透過 constructor 注入需要它的 view。
+
+    Bug #17（第一次發現）修法（overlay.append）在 V Phase 第七輪實機仍炸 →
+    Bug #18 定調：overlay 路徑是誤判，必須走 shared instance。
+
+    歷史教訓：T-F10 舊版只 grep `overlay.append` 存在，**test 綠燈但實機炸** —
+    這是典型 L4a gap（驗「形狀對」沒驗「真的 work」）。新版直接禁止 handler
+    內建立，並要求 main.py 持有單例。
     """
 
     APP_DIR = pathlib.Path(__file__).resolve().parents[2] / "app"
+    MAIN_PY = APP_DIR / "main.py"
 
     def _iter_filepicker_sites(self):
         """yield (file, func_name, func_text) 若 func 內建 ft.FilePicker()"""
@@ -190,38 +202,132 @@ class TestFilePickerOverlayContract:
                 if "ft.FilePicker()" in func_text:
                     yield path, func_name, func_text
 
-    def test_every_filepicker_usage_mounts_to_overlay(self):
-        """App 內每個 ft.FilePicker() 建立處同函式內必含 overlay.append(picker)。
+    def test_main_py_creates_single_shared_filepicker(self):
+        """main.py 必須持有一顆共用 FilePicker（module-level 或 main() 內）。"""
+        text = self.MAIN_PY.read_text(encoding="utf-8")
+        assert "ft.FilePicker()" in text, (
+            "main.py 未建立共用 FilePicker — Bug #18 修法要求 main() 預建 "
+            "`file_picker = ft.FilePicker()` 並注入 DashboardView / TermsView。"
+        )
 
-        若此測試 fail：Bug #17 風格回歸出現（即 `RuntimeError: Session closed`
-        潛伏），追建 picker 的函式並加 `page.overlay.append(picker)` pattern。
+    def test_only_main_py_instantiates_filepicker(self):
+        """其他檔案不可 new FilePicker；必須用 main.py 注入的共用實例。
+
+        Bug #18 教訓：on_click 內 `ft.FilePicker()` 會 leak + 觸發 GC 風險，
+        一律走 constructor 注入的 `self.file_picker.save_file(...)` 路徑。
         """
-        sites = list(self._iter_filepicker_sites())
-        assert sites, (
-            "Expected to find at least one `ft.FilePicker()` in app/ "
-            "(dashboard export/import, terms_view import). Did they "
-            "all get replaced with a different API? Update this test."
-        )
         violations = []
-        for path, func_name, func_text in sites:
-            if "overlay.append" not in func_text:
-                violations.append(f"{path.name}::{func_name}")
+        for path in self.APP_DIR.rglob("*.py"):
+            if path.name == "main.py":
+                continue
+            text = path.read_text(encoding="utf-8")
+            if "ft.FilePicker()" in text:
+                violations.append(str(path.relative_to(self.APP_DIR)))
         assert not violations, (
-            "Bug #17 regression — the following functions create "
-            "`ft.FilePicker()` without mounting to `page.overlay`:\n  - "
-            + "\n  - ".join(violations)
-            + "\nPattern required (bug_report §Bug #17):\n"
-              "  picker = ft.FilePicker()\n"
-              "  self._page_ref.overlay.append(picker); self._page_ref.update()\n"
-              "  try:\n      path = await picker.save_file(...)\n"
-              "  finally:\n      self._page_ref.overlay.remove(picker); self._page_ref.update()"
+            "Bug #18 regression — 下列檔案在 main.py 以外建立 `ft.FilePicker()`：\n"
+            "  - " + "\n  - ".join(violations)
+            + "\n\n改用 main() 預建的共用 picker + constructor 注入："
+              "\n  # main.py:   file_picker = ft.FilePicker(); MyView(..., file_picker=file_picker)"
+              "\n  # view.py:   await self.file_picker.save_file(...)"
         )
 
-    def test_every_filepicker_usage_removes_from_overlay(self):
-        """搭配 append 必須有 remove（finally 內）避免累積洩漏。"""
-        for path, func_name, func_text in self._iter_filepicker_sites():
-            if "overlay.append" in func_text:
-                assert "overlay.remove" in func_text, (
-                    f"{path.name}::{func_name} appends FilePicker to overlay "
-                    f"but never removes it (should be in finally block)."
-                )
+
+# ─── T-F11: FilePicker 使用站必須包 try/except（Bug #18 Step 3）───
+
+class TestFilePickerHandlerErrorContainment:
+    """T-F11：呼叫 `self.file_picker.save_file / pick_files` 的 async on_click
+    handler 必須把呼叫包在 try/except 裡，因為 Flet 0.84 任何 invoke_method
+    異常（timeout / session closed / 使用者 race 取消）會原樣冒出 on_click：
+
+        ERROR:flet:Unhandled error in 'on_click' handler
+        RuntimeError: TimeoutException ...
+
+    異常冒出後，Flet 雖然 log 但不再 dispatch 後續 update —
+    → 甲方看到「review 畫面按了沒反應，只有刪除鍵有效」（Bug #18 實機症狀）。
+
+    修法：在 picker call 外圈包 try/except，異常走 SnackBar，handler 正常 return，
+    讓 Flet event loop 回到健康狀態。此 test 以 AST 掃描確保每個 picker 呼叫
+    都被 try 包住（smoke-style，不跑真 Flet session — 那需 E2E，非 contract 層）。
+    """
+
+    APP_DIR = pathlib.Path(__file__).resolve().parents[2] / "app"
+
+    def test_every_picker_call_is_wrapped_in_try(self):
+        """所有 `self.file_picker.save_file` / `pick_files` 呼叫必須在 try 區塊內。"""
+        import ast
+
+        class PickerCallVisitor(ast.NodeVisitor):
+            def __init__(self):
+                self.violations: list[str] = []
+                self._try_depth = 0
+                self._func_stack: list[str] = []
+
+            def visit_FunctionDef(self, node):
+                self._func_stack.append(node.name)
+                self.generic_visit(node)
+                self._func_stack.pop()
+
+            def visit_AsyncFunctionDef(self, node):
+                self.visit_FunctionDef(node)
+
+            def visit_Try(self, node):
+                self._try_depth += 1
+                self.generic_visit(node)
+                self._try_depth -= 1
+
+            def visit_Await(self, node):
+                call = node.value
+                if (
+                    isinstance(call, ast.Call)
+                    and isinstance(call.func, ast.Attribute)
+                    and call.func.attr in ("save_file", "pick_files")
+                    and isinstance(call.func.value, ast.Attribute)
+                    and call.func.value.attr == "file_picker"
+                ):
+                    if self._try_depth == 0:
+                        self.violations.append(
+                            f"{self._func_stack[-1] if self._func_stack else '<module>'}"
+                            f" → await self.file_picker.{call.func.attr}(...)"
+                        )
+                self.generic_visit(node)
+
+        all_violations: list[str] = []
+        for path in self.APP_DIR.rglob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            if "file_picker." not in text:
+                continue
+            tree = ast.parse(text)
+            v = PickerCallVisitor()
+            v.visit(tree)
+            for vio in v.violations:
+                all_violations.append(f"{path.name}: {vio}")
+
+        assert not all_violations, (
+            "Bug #18 Step 3 regression — 下列 FilePicker 呼叫未包 try/except：\n"
+            "  - " + "\n  - ".join(all_violations)
+            + "\n\n異常會 propagate 到 on_click，讓 Flet log 'Unhandled error' "
+              "並讓後續 update 停擺（甲方回報：畫面看似卡死，只有刪除鍵有效）。"
+        )
+
+
+# ─── T-F11 bonus: main.py FilePicker 注入完整性 ───
+
+class TestFilePickerInjectionIntegrity:
+    """main() 建的共用 picker 必須實際注入到所有需要它的 view。"""
+
+    APP_DIR = pathlib.Path(__file__).resolve().parents[2] / "app"
+
+    def test_dashboard_view_accepts_file_picker(self):
+        text = (self.APP_DIR / "ui" / "dashboard_view.py").read_text(encoding="utf-8")
+        assert "file_picker" in text, "DashboardView 未接受 file_picker 參數"
+        assert "self.file_picker" in text, "DashboardView 未保存 file_picker 為屬性"
+
+    def test_terms_view_accepts_file_picker(self):
+        text = (self.APP_DIR / "ui" / "terms_view.py").read_text(encoding="utf-8")
+        assert "file_picker" in text, "TermsView 未接受 file_picker 參數"
+
+    def test_main_injects_file_picker_into_views(self):
+        text = (self.APP_DIR / "main.py").read_text(encoding="utf-8")
+        assert "file_picker=file_picker" in text, (
+            "main.py 建了 file_picker 卻沒注入 view — 等同沒修。"
+        )
