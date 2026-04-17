@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from concurrent.futures import Future
 
 import flet as ft
 
@@ -46,7 +47,8 @@ def main(page: ft.Page):
     summarizer: Summarizer | None = None
     processor: StreamProcessor | None = None
     recorder: AudioRecorder | None = None
-    pipeline_task: asyncio.Task | None = None  # Bug #9: 保留 _run handle 供 stop 取消
+    # Bug #13：page.run_task 回傳 concurrent.futures.Future（非 asyncio.Task）
+    pipeline_task: Future | None = None
 
     # ── UI 建構 ──
     main_view = MainView(config)
@@ -174,8 +176,9 @@ def main(page: ft.Page):
     async def _stop_recording_async():
         """正常停止路徑（I3）：軟停 recorder → drain pipeline → 超時才 cancel。
 
-        - `pipeline_task.cancel()` 只在 stop_drain_timeout_sec 超時才啟動（安全網）
-        - 超時路徑會由 _run 的 CancelledError 分支 transition 到 aborted + save
+        Bug #13 fix：pipeline_task 是 concurrent.futures.Future（page.run_task 回傳），
+        不能 asyncio.shield / wait_for / await。改用 .done() 輪詢（方案 A）。
+        cf.Future.cancel() 在 run_coroutine_threadsafe 特化下會 propagate 到底層 asyncio task（OK）。
         """
         nonlocal recorder, pipeline_task
         if recorder is not None:
@@ -187,20 +190,31 @@ def main(page: ft.Page):
         task = pipeline_task
         if task is None or task.done():
             return
-        try:
-            await asyncio.wait_for(asyncio.shield(task), timeout=stop_drain_timeout_sec)
-        except asyncio.TimeoutError:
-            logger.warning(
-                "Pipeline drain exceeded %ss — forcing cancel (watchdog safety net)",
-                stop_drain_timeout_sec,
-            )
-            task.cancel()
-            try:
-                await task
-            except (asyncio.CancelledError, Exception):
-                pass
-        except asyncio.CancelledError:
-            pass
+
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + stop_drain_timeout_sec
+
+        # Phase 1：等 pipeline 自然 drain（recorder 已設 stop flag，async gen 會自然收尾）
+        while not task.done():
+            if loop.time() >= deadline:
+                logger.warning(
+                    "Pipeline drain exceeded %ss — forcing cancel (watchdog safety net)",
+                    stop_drain_timeout_sec,
+                )
+                task.cancel()
+                break
+            await asyncio.sleep(0.2)
+
+        # Phase 2：cancel 後等 task 真正完成（_run finally 需跑完 save + UI 轉場）
+        if not task.done():
+            cancel_deadline = loop.time() + 10
+            while not task.done():
+                if loop.time() >= cancel_deadline:
+                    logger.error(
+                        "Pipeline task still not done 10s after cancel — giving up"
+                    )
+                    break
+                await asyncio.sleep(0.2)
 
     def on_stop_recording():
         # Flet 回呼為同步；將軟停 + drain + watchdog 邏輯丟到 event loop

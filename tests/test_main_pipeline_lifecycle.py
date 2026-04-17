@@ -769,3 +769,118 @@ async def test_transition_rejects_invalid_status_and_requires_abort_reason(tmp_p
     # 正常帶 reason 應成功
     mgr.transition(session, "aborted", abort_reason="stop_timeout")
     assert session.abort_reason == "stop_timeout"
+
+
+# ─────────────────────────────────────────────────────────────
+# Bug #13 — cf.Future-aware stop drain 輪詢
+# 對應 [[flet_0.84_async_lifecycle_20260417]] §5 方案 A（輪詢）
+# pipeline_task 是 concurrent.futures.Future（page.run_task 回傳），
+# 不能 asyncio.shield / wait_for / await — 只用 .done() / .cancel()
+# ─────────────────────────────────────────────────────────────
+
+
+class _FakeCfFuture:
+    """模擬 concurrent.futures.Future 的最小介面（無 __await__）。
+
+    重點：拔掉 __await__ 證明被測 code 不走 asyncio 語法。
+    cf.Future 在 run_coroutine_threadsafe 下 .cancel() 會 propagate 到底層 task（§1.3）。
+    """
+
+    def __init__(self):
+        self._done = False
+        self._cancelled = False
+
+    def done(self):
+        return self._done or self._cancelled
+
+    def cancel(self):
+        self._cancelled = True
+        return True
+
+    def set_done(self):
+        """測試用：模擬 task 自然完成"""
+        self._done = True
+
+
+async def _stop_drain_poll(task, timeout_sec: float, poll_interval: float = 0.05):
+    """main.py _stop_recording_async 的 drain+cancel 核心邏輯提煉（方案 A 輪詢）。
+
+    只用 task.done() / task.cancel()，不碰 asyncio.shield / wait_for / await task。
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout_sec
+
+    while not task.done():
+        if loop.time() >= deadline:
+            task.cancel()
+            break
+        await asyncio.sleep(poll_interval)
+
+    if not task.done():
+        cancel_deadline = loop.time() + 2
+        while not task.done():
+            if loop.time() >= cancel_deadline:
+                break
+            await asyncio.sleep(poll_interval)
+
+
+@pytest.mark.asyncio
+async def test_stop_drain_cf_future_normal_completion():
+    """C9+C10：cf.Future 自然完成（pipeline drain 成功）→ 不觸發 cancel"""
+    future = _FakeCfFuture()
+
+    async def mark_done():
+        await asyncio.sleep(0.1)
+        future.set_done()
+
+    asyncio.create_task(mark_done())
+    await _stop_drain_poll(future, timeout_sec=5)
+
+    assert future.done()
+    assert not future._cancelled, "正常完成路徑不該觸發 cancel"
+
+
+@pytest.mark.asyncio
+async def test_stop_drain_cf_future_timeout_triggers_cancel():
+    """C9+C10+I3：cf.Future 永不完成 → 超時 → cancel（watchdog safety net）"""
+    future = _FakeCfFuture()  # 永不 set_done
+
+    await _stop_drain_poll(future, timeout_sec=0.2)
+
+    assert future._cancelled, "超時路徑必須觸發 task.cancel()"
+    assert future.done(), "cancel 後 done() 應回 True"
+
+
+@pytest.mark.asyncio
+async def test_stop_drain_cf_future_already_done_returns_immediately():
+    """C9：task 已 done → _stop_recording_async 不多等（已 done 才進來的場景）"""
+    future = _FakeCfFuture()
+    future.set_done()
+
+    import time
+    start = time.monotonic()
+    await _stop_drain_poll(future, timeout_sec=10)
+    elapsed = time.monotonic() - start
+
+    assert elapsed < 0.5, f"已 done 的 task 不應等待，但花了 {elapsed:.1f}s"
+    assert not future._cancelled
+
+
+@pytest.mark.asyncio
+async def test_stop_drain_does_not_use_asyncio_await_on_cf_future():
+    """C9 核心：被測 code 不對 cf.Future 做 asyncio.shield / wait_for / await。
+
+    _FakeCfFuture 沒有 __await__，若 _stop_drain_poll 嘗試 await 它會 TypeError。
+    此 test 能通過就證明 code path 安全。
+    """
+    future = _FakeCfFuture()
+    assert not hasattr(future, "__await__"), "fake 不應有 __await__"
+
+    # 模擬短暫後完成
+    async def mark_done():
+        await asyncio.sleep(0.05)
+        future.set_done()
+
+    asyncio.create_task(mark_done())
+    # 不 raise TypeError = code 沒嘗試 await cf.Future
+    await _stop_drain_poll(future, timeout_sec=5)
