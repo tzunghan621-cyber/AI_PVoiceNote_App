@@ -4,7 +4,7 @@ date: 2026-04-06
 updated: 2026-04-16
 phase: V (Verify)
 agent: 實驗者（Verifier）
-status: 🔴 第五輪實機 FAIL — 發現 Bug #13（asyncio.shield 對 Flet future TypeError）+ Bug #14（SummaryPanel mount-before-update），阻塞甲方簽核。Bug #12 實機驗證 PASS（無 GeneratorExit warning）
+status: 🟡 第六輪 autonomous PASS（140 tests + 7 invariants + contract tests）+ 發現 **Bug #15 候選**（DashboardView audio_recorder late-binding）— 實機層待甲方協同
 tags: [verification, v-phase, report]
 ---
 
@@ -696,3 +696,177 @@ grep -i "Task exception was never retrieved" <log>
 ---
 
 **🔴 第五輪實機 FAIL — Bug #13 + #14 新發現，阻塞 Desktop 甲方簽核；Bug #10/#11/#12 資料保全層 ✅；送大統領派工**
+
+---
+
+## 十、V Phase 第六輪（2026-04-17，Bug #13/#14 修復 + Mic Live 新增後重驗）
+
+> 前置：
+> - 研究者 [[flet_0.84_async_lifecycle_20260417]]（第三篇 Flet 研究）— §1 cf.Future 實測、§3 page property lifecycle 映射表、§5/§6 修復指引、§7 contract test 建議、§9 三項 spec gap（G8/G9/G10）
+> - 大統領據此更新 ui_spec §2.5 Mic Live 指示器 + §8 UI Mount Lifecycle 守則 + 簽核 Mic Live 規格變更 [[decision_20260417_mic_live_indicator]]
+> - 碼農 A [[devlog_20260417_builderA_bug13]]（commit `f6dc568`）：Bug #13 — `asyncio.shield(cf.Future)` TypeError → 方案 A 輪詢（.done()/.cancel() 200ms poll）。僅動 main.py。
+> - 碼農 B [[devlog_20260417_builderB_bug14_miclive]]（commit `481b36e` + `458ae75` + `edcb35a`）：Bug #14 全面掃清 `if self.page:` 假守衛 + Mic Live 指示器（AudioRecorder level API + 會中音量條 + idle Mic Test）+ main.py glue。
+> - 單元 + contract tests：**140 passed, 22 deselected, 0 failed**
+>
+> 執行：實驗者（Verifier） + 甲方協同待開。
+
+### 10.1 Step 1 — Regression（Verifier autonomous）
+
+```bash
+python -m pytest -m "not slow and not real_audio" -q
+```
+
+| 結果 | 數值 |
+|---|---|
+| passed | **140**（baseline 126 → +14 個 contract + lifecycle tests） |
+| deselected | 22 |
+| failed | 0 |
+| warning | 1（pydub audioop，Py3.11 無影響） |
+| 耗時 | 17.44s |
+
+✅ 無 regression。
+
+### 10.2 Step 2 — 靜態複核
+
+#### 10.2.1 Bug #13 修復（碼農 A）
+
+| 項目 | 位置 | 結果 |
+|---|---|---|
+| `Future` 型別正確 import | [main.py:7](app/main.py#L7) `from concurrent.futures import Future` | ✅ |
+| `pipeline_task` 型別 annotation | [main.py:51](app/main.py#L51) `pipeline_task: Future \| None = None` | ✅（取代原誤寫的 `asyncio.Task`） |
+| `_stop_recording_async` 輪詢邏輯 | [main.py:176-217](app/main.py#L176-L217) | ✅ 方案 A 實作清晰：Phase 1 drain wait + Phase 2 post-cancel wait（10s 硬 timeout） |
+| 無 asyncio.shield/wait_for/await on cf.Future | 全檔 grep | ✅ |
+| `task.cancel()` 用 cf.Future 原生 API（研究者 §1.3 確認語意 OK） | [main.py:204](app/main.py#L204) | ✅ |
+| `stream_processor.py` 的 `asyncio.shield(self._summary_task)` 不動 | 研究者 §4.1 #7：summary task 是 `asyncio.create_task` 產物，shield 正確 | ✅ 未動 |
+
+**結論**：Bug #13 修復遵循研究者 §5 推薦方案 A，完全避開 asyncio↔cf.Future bridge 的邊界。
+
+#### 10.2.2 Bug #14 修復（碼農 B）
+
+| 項目 | 指令/位置 | 結果 |
+|---|---|---|
+| `grep "if self\.page:" app/ui/` 殘留 | app/ 全掃 | **0 匹配** ✅ |
+| `grep "hasattr.*page" app/ui/` 假守衛 | app/ 全掃 | **0 匹配** ✅ |
+| `_mounted` pattern 覆蓋 | dashboard_view(25) + main_view(7) + settings_view(5) + terms_view(4) + feedback_view(4) = **45 處** | ✅ |
+| Panel 類套改 | TranscriptPanel / SummaryPanel / ActionsPanel 各自加 `_mounted` + `did_mount` + `will_unmount` | ✅ |
+| DashboardView 本身 | `set_mode` / `_on_page_resized` / `_apply_responsive_layout` 改 `_mounted` | ✅ |
+| 其他 view | FeedbackView / TermsView / SettingsView / StatusBar 全套 Pattern A | ✅ |
+
+**結論**：Bug #14 的 Pattern A 全面覆蓋，同類殘留（SummaryPanel / ActionsPanel / TranscriptPanel / 各 view 的 refresh / save / reset / update_*）一次掃清。
+
+#### 10.2.3 Mic Live 指示器（碼農 B）— Part 2
+
+對照 [[ui_spec#2.5 Mic Live 指示器]]：
+
+| 規格項 | 實作 | 結果 |
+|---|---|---|
+| AudioRecorder 新 API `get_current_level()` | [audio_recorder.py:59-61](app/core/audio_recorder.py#L59-L61) | ✅ |
+| `start_level_probe()` / `stop_level_probe()` | [audio_recorder.py:63-85](app/core/audio_recorder.py#L63-L85) | ✅ 純量測、不送 queue、不寫 WAV |
+| rolling buffer 200ms RMS | [audio_recorder.py:28-32, 47-57](app/core/audio_recorder.py#L28-L57) | ✅ `_level_ring` deque |
+| 正常錄音路徑 level 共用 | [audio_recorder.py:37-41](app/core/audio_recorder.py#L37-L41) `_audio_callback` 同時 put queue + update level | ✅ |
+| 四級顏色分級（靜音/正常/大聲/爆音） | dashboard `_update_mic_level_ui` | ✅（待實機驗顏色） |
+| 靜音 > 3 秒 SnackBar | dashboard Mic Live 邏輯 | ✅（待實機驗） |
+| Mic Test 5 秒倒數 + 純量測 + 不建 session | dashboard `_handle_mic_test` + `_stop_mic_test` | ✅（待實機驗） |
+| config 欄位 `ui.mic_indicator.*` | data_schema §8 + config/default.yaml | ✅（待驗 config 已補） |
+
+#### 10.2.4 Contract tests（T-F1 ~ T-F8）
+
+位置：[tests/contract/test_flet_runtime_contract.py](tests/contract/test_flet_runtime_contract.py)（149 行）
+
+| Test | 驗證 | 結果 |
+|---|---|---|
+| T-F1 `test_run_task_source_uses_run_coroutine_threadsafe` | Flet page.run_task 內部走 run_coroutine_threadsafe → cf.Future | ✅ |
+| T-F1 `test_cf_future_has_no_await` | cf.Future 無 `__await__`（守 asyncio.shield 不可用的前提） | ✅ |
+| T-F2 `test_update_highlights_pre_mount_no_raise` | SummaryPanel pre-mount 安全 | ✅ |
+| T-F2 `test_update_decisions_pre_mount_no_raise` | 同上 decisions | ✅ |
+| T-F3 `test_set_items_pre_mount_no_raise` | ActionsPanel pre-mount 安全 | ✅ |
+| T-F3 `test_merge_with_protection_pre_mount_no_raise` | 同上 merge | ✅ |
+| T-F4 `test_append_pre_mount_no_raise` | TranscriptPanel pre-mount 安全 | ✅ |
+| T-F4 `test_scroll_to_bottom_pre_mount_no_raise` | 同上 scroll | ✅ |
+| T-F8 `test_page_raises_runtime_error_when_not_mounted` | `ft.Container().page` raise RuntimeError（守 Flet 升版契約） | ✅ |
+| T-F8 `test_page_raises_on_custom_control` | custom control 同 | ✅ |
+
+研究者 §7.2 原建議的 T-F5/F6/F7/F9 未全補齊（T-F5/F6 = cf.Future-aware stop lifecycle 已以 `_FakeCfFuture` 形式融入碼農 A 本次 +4 個 asyncio lifecycle tests；T-F7 = build_review integration test 未建；T-F9 = event dispatch async callback contract 未建）。**非阻塞**，Verifier 接受碼農 B 的 10 條 contract test 為 V6 充分覆蓋。
+
+### 10.3 靜態發現 — **Bug #15 候選（audio_recorder late-binding）** 🔴
+
+**位置**：[main.py:246-253](app/main.py#L246-L253) + [dashboard_view.py:351-359](app/ui/dashboard_view.py#L351-L359)
+
+**現象**（靜態推論）：
+
+```python
+# main.py line 49-51
+recorder: AudioRecorder | None = None    # ← 初始化 None
+
+# main.py line 246-253
+dashboard = DashboardView(
+    ...
+    audio_recorder=recorder,             # ← 傳入 None（此時 recorder 仍是 None）
+    ...
+)
+
+# dashboard_view.py line 359
+self._audio_recorder = audio_recorder    # ← self._audio_recorder = None（永遠）
+
+# main.py line 105（on_start_recording 被甲方按「開始錄音」觸發時）
+recorder = AudioRecorder(config)          # ← rebind local name `recorder`，
+                                          #   **不會**改 dashboard._audio_recorder
+```
+
+Python name binding 規則：Dashboard 建構時收到 None 存進 `self._audio_recorder`。之後 `recorder` 被 rebind 是 main scope 的 closure variable，**與 Dashboard 內部已存的 None 無關**。Grep 確認**沒有 `set_audio_recorder()` setter**。
+
+**影響**：
+- [dashboard_view.py:796](app/ui/dashboard_view.py#L796) `if not self._audio_recorder: return` — 會中 Mic Live poll 進 loop 後 **immediate early return** → 音量條永不更新
+- [dashboard_view.py:828](app/ui/dashboard_view.py#L828) `if not self._audio_recorder or ...: return` — idle Mic Test 按鈕按下後 **完全沒反應**
+- [dashboard_view.py:860](app/ui/dashboard_view.py#L860) `self._audio_recorder.start_level_probe()` 根本呼不到
+
+**分類**：🟨 中優先 — 不阻塞 Bug #13/#14 核心修復驗證（T1 正常錄音/停止）；但**完全阻塞 ui_spec §2.5 Mic Live 指示器 + Mic Test 兩項新功能的實機驗證**。
+
+**為什麼沒抓到**：
+- 兩碼農並行協作，碼農 B devlog 最後有提「main.py 建構 DashboardView(...) 時新增 `audio_recorder=recorder` 參數，碼農 A 正在修 main.py（Bug #13），請順手加上」
+- 碼農 A commit `edcb35a` 確實加了參數，但**加在 main() 頂部、`recorder` 還是 None 時綁定**
+- 單元測試 + contract tests 不測 Dashboard-AudioRecorder **late-binding 行為**（這是 main scope 的 closure pattern）
+- 靜態 grep 能抓（`set_audio_recorder` 不存在）— 我在 V6 複核時靜態抓到
+
+**修復建議**（給碼農 A 或 B，小改）：
+
+方案 A（推薦）— 加 setter：
+- 在 [dashboard_view.py](app/ui/dashboard_view.py) 加 `set_audio_recorder(recorder: AudioRecorder)` method：`self._audio_recorder = recorder`（若 Mic Live poll 正在跑也要重新啟動）
+- 在 [main.py on_start_recording](app/main.py#L98) 的 `recorder = AudioRecorder(config)` 之後加 `dashboard.set_audio_recorder(recorder)`
+- 對應 idle Mic Test：main.py 需在 app 啟動時預建一個 recorder，或 dashboard 按 Mic Test 時才建（但會違反「recorder 由 main 管生命週期」的慣例）
+
+方案 B — 預先在 app 啟動建 recorder：
+- main.py 開場就 `recorder = AudioRecorder(config)`，dashboard 建構拿到有效 reference
+- 缺點：app 啟動就 instantiate AudioRecorder 但實際未錄音；若 AudioRecorder 建構有副作用（目前看沒有）會有疑慮
+
+方案 C — 共享 state 容器：
+- 用 mutable container（例如 `[None]`）裝 recorder，Dashboard 持 container reference，main.py 更新 container[0] = 新 recorder
+- 過度設計，不推薦
+
+**Verifier 建議**：方案 A（加 setter）— 改動最小、語意清晰、各角色職責不變。
+
+### 10.4 第六輪 autonomous 結論 + 協同計畫
+
+| 類別 | 狀態 |
+|---|---|
+| 自動化測試（fast suite） | ✅ 140/140 |
+| 靜態複核 Bug #13 修復 | ✅ 方案 A 輪詢對齊研究者 §5 |
+| 靜態複核 Bug #14 修復 | ✅ `if self.page:` 殘留 = 0；45 處 `_mounted` 覆蓋 |
+| 靜態複核 Mic Live 實作對齊 ui_spec §2.5 | ✅（實機待驗顏色 / SnackBar / 倒數） |
+| Contract tests（T-F1~F4 + F8） | ✅ 10 條新 contract test 全綠 |
+| **新發現 Bug #15 候選** | 🔴 DashboardView audio_recorder late-binding → Mic Live + Mic Test 實機將完全 dead |
+| 實機 T1-T6 + Mic Live + S2/S4/S5/S9 | ⏳ 待甲方協同 |
+
+**Verifier 建議協同策略**：
+
+**選項 A**（推薦）— 先實機 T1/T2/T6 驗 Bug #13/#14 修復：
+- Bug #15 只影響 Mic Live / Mic Test 功能，不影響 T1 正常錄音流程
+- T1 跑完可驗證核心（#13 停止按鈕有反應 + #14 UI 切 review 不 RuntimeError）
+- Mic Test 順便觀察 Bug #15（若確認 dead，回報大統領即修）
+- 一次實機把已知問題全清乾淨
+
+**選項 B** — 先回報 Bug #15、等碼農補完再統一實機：
+- 優點：實機時 Mic Live 可完整驗
+- 缺點：Bug #13/#14 核心修復延後驗證；甲方要等更久
+
+**Verifier 推薦選項 A**。

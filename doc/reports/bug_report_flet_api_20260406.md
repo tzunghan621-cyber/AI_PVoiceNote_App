@@ -5,7 +5,7 @@ updated: 2026-04-16
 type: bug-report
 phase: V (Verify)
 agent: 實驗者（Verifier）
-status: 🔴 阻塞中（Bug #13 + #14 — V Phase 第五輪實機新發現：page.run_task 回傳型別不相容 + SummaryPanel mount-before-update）
+status: 🟡 Bug #13/#14 已修（V6 靜態 ✅）+ 新發現 Bug #15 候選（DashboardView audio_recorder late-binding，影響 Mic Live/Test 但非 pipeline lifecycle）
 severity: high
 tags: [bug, flet, api-breakage, v-phase, pipeline-lifecycle, data-loss]
 ---
@@ -36,6 +36,7 @@ V Phase 驗證期間，連續發現 **12 個** 相關問題（Flet 0.84 + 非 Fl
 6. **Pipeline 架構：summarizer 與 transcribe 無背景化** — Bug #11（長期架構問題，V4 首次可觀測）
 7. **async generator `finally` 內 yield** — Bug #12（違反 Python async gen 規則）
 8. **page.run_task 回傳 concurrent.futures.Future（非 asyncio.Task）→ asyncio.shield 不相容** — Bug #13（研究者架構 review 漏網，V5 實機首次可觀測）
+9. **跨模組 wiring late-binding 盲點** — Bug #15（兩碼農並行協作 glue gap，V6 靜態複核抓到）
 
 > ⚠️ **建議**：請 Researcher 系統性掃過 Flet 0.84.0 升級指南，一次找齊所有不相容處，避免逐個踩雷。
 
@@ -821,6 +822,124 @@ Bug #1~#8 全數 Flet API / Flet 0.84 lifecycle 相關都已收斂。然而**第
 1. 派碼農 A（邏輯類，依本次任務分工）修 Bug #9
 2. 修復後 Verifier 先跑 127 fast tests，再協同甲方重跑即時錄音 5-10 分鐘
 3. 一併驗證「匯入音檔」路徑的同類 lifecycle 問題（[main.py:91-98](app/main.py#L91-L98)）
+
+---
+
+## Bug #15：DashboardView `audio_recorder` late-binding → Mic Live + Mic Test 實機 dead 🟨
+
+| 項目 | 內容 |
+|---|---|
+| 狀態 | 🟨 待修復（2026-04-17 V Phase 第六輪 **靜態複核時**抓到，實機尚未驗證） |
+| 觸發 | 甲方點 idle「測試麥克風」按鈕、或進入會中模式等待頂部 Mic Live 音量條 |
+| 檔案 | [main.py:49-51, 246-253](app/main.py#L49-L51)（主因）+ [dashboard_view.py:351-359, 796, 828, 860](app/ui/dashboard_view.py#L351-L359) |
+| 類別 | **跨模組 wiring / Python name binding 盲點**（非 Flet 相關） |
+| 阻塞 | ui_spec §2.5 Mic Live 指示器 + Mic Test 功能驗證；**不阻塞** Bug #13/#14 核心驗證（T1 正常錄音流程） |
+| 嚴重度 | 🟨 中 — 新功能完全 dead；但與資料保全 + pipeline lifecycle 無關 |
+| 指派建議 | **碼農 A 或 B**（簡單，加 setter 或預建 recorder 即可） |
+
+### 現象（靜態推論，實機待驗）
+
+甲方按 idle「🎤 測試麥克風」按鈕預期倒數 + 音量條動，實際**按鈕無反應**（handler 內 early return）。
+
+甲方進會中模式預期頂部列有 Mic Live 音量條隨麥克風變化，實際**音量條永不更新**（dBFS 文字卡 `-80`）。
+
+### log 證據
+
+無 ERROR 或 Traceback — 因為 `if not self._audio_recorder: return` 是 silent early return。**這是比 RuntimeError 更難發現的 bug**（沒 log 線索）。
+
+### 根因
+
+Python name binding + main.py 的 closure 模式：
+
+```python
+# main.py line 49-51
+recorder: AudioRecorder | None = None      # ← main() 頂部初始化
+
+# main.py line 246-253
+dashboard = DashboardView(
+    ...
+    audio_recorder=recorder,               # ← 傳 None（recorder 此時仍是 None）
+    ...
+)
+# 結果：dashboard._audio_recorder = None（永遠）
+
+# main.py line 98-105（甲方按「開始錄音」時）
+def on_start_recording(title, participants):
+    nonlocal ... recorder ...
+    ...
+    recorder = AudioRecorder(config)       # ← rebind 的是 main scope 的 `recorder` name
+                                           #   dashboard._audio_recorder 內部那個 None 不會動
+```
+
+Grep 確認 `set_audio_recorder` method **不存在**。Dashboard 一旦拿到 None 就沒有 late-inject 機制。
+
+### 為何兩碼農都沒抓到
+
+- 碼農 B Part 2 devlog 寫：「`main.py` 建構 `DashboardView(...)` 時新增 `audio_recorder=recorder` 參數；碼農 A 正在修 main.py（Bug #13），請順手加上」
+- 碼農 A commit `edcb35a` 標題「main.py DashboardView 建構補 audio_recorder 參數」— 確實加了參數位
+- **但兩人都沒驗「加在 main() 頂部、此時 recorder 是 None」這個 Python name binding 細節**
+- 單元測試不測跨模組閉包 late-binding
+- Contract test 不測此類 wiring 問題
+- 只有**靜態推論**（grep + name binding 分析）能抓
+
+Verifier V6 靜態複核時發現。
+
+### 修復方向建議
+
+#### 方案 A（推薦）— 加 setter
+
+```python
+# dashboard_view.py
+def set_audio_recorder(self, recorder: AudioRecorder):
+    """main.py on_start_recording 時把新建 recorder 注入 Dashboard"""
+    self._audio_recorder = recorder
+    # 若 Mic Live poll 已啟動，需重啟 binding 到新 recorder
+    if self._level_poll_running:
+        self._stop_level_poll()
+        self._start_level_poll()
+
+# main.py on_start_recording
+recorder = AudioRecorder(config)
+dashboard.set_audio_recorder(recorder)     # ← 新增
+...
+```
+
+idle Mic Test 的另一問題：app 啟動後 recorder 還沒建，Mic Test 按鈕按下去仍是 None。解法：
+- 方案 A1：`_handle_mic_test` 內若 `self._audio_recorder is None` 就臨時建一個（`AudioRecorder(self._config)`），probe 完 dispose
+- 方案 A2：main.py 在 DashboardView 建構後就預先建 recorder（雖然錄音路徑會在 `on_start_recording` 再建一個，但 Mic Test 有 recorder 用）
+
+#### 方案 B — 預建 recorder
+
+```python
+# main.py 開場
+recorder = AudioRecorder(config)   # 不再是 None
+dashboard = DashboardView(..., audio_recorder=recorder, ...)
+# on_start_recording 不再 new recorder，直接用
+```
+
+缺點：app 啟動就 instantiate AudioRecorder（sd.InputStream 未啟動，無副作用，技術上 OK）；但打破「recorder 只在錄音週期內存在」的語意。
+
+#### 方案 C — 共享容器
+
+用 mutable container 包 recorder。過度設計，**不推薦**。
+
+**Verifier 建議方案 A + A1 組合**：改動最小、職責清晰、Mic Test 無需依賴 `on_start_recording`。
+
+### 驗證條件（碼農修完後）
+
+1. 140 fast tests 無 regression
+2. 實機：甲方點 idle「測試麥克風」→ 5 秒倒數啟動、音量條更新、peak dBFS 文字有顯示
+3. 實機：甲方按「開始錄音」→ 頂部 Mic Live 音量條隨聲音變化 + 四級顏色（§2.5）
+4. 實機：靜音 > 3 秒 → SnackBar 警訊「麥克風訊號極弱」
+5. 加一個整合 smoke test：建 main 需要的物件、跑到 DashboardView 建構完、assert `dashboard._audio_recorder` 不為 None（V6 反思「contract test 綠燈 ≠ 符合跨模組 wiring」的首次落地測試）
+
+### Verifier 反思總結
+
+| 輪次 | Gap | 補測層 |
+|---|---|---|
+| V4 | 單元綠燈 ≠ 符合 spec | V5 spec-level invariants tests |
+| V5 | spec 綠燈 ≠ 符合 framework runtime | V6 contract tests (T-F1~F8) |
+| **V6** | **contract 綠燈 ≠ 符合跨模組 wiring** | **未補（建議 V7 integration smoke test）** |
 
 ---
 
