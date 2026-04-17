@@ -19,6 +19,7 @@ class TermsView(ft.Container):
     def __init__(self, page: ft.Page, knowledge_base):
         self._page_ref = page
         self.kb = knowledge_base
+        self._mounted = False
         self._search_query = ""
         self._filter_category = None
         self._terms_list = ft.Column(spacing=2, scroll=ft.ScrollMode.AUTO, expand=True)
@@ -29,7 +30,11 @@ class TermsView(ft.Container):
         # [Bug #7] 不可在 __init__ 內 update；改 did_mount
 
     def did_mount(self):
+        self._mounted = True
         self.refresh()
+
+    def will_unmount(self):
+        self._mounted = False
 
     def _build(self) -> ft.Column:
         search = ft.TextField(
@@ -103,7 +108,7 @@ class TermsView(ft.Container):
         rate = (total_succ / total_corr * 100) if total_corr > 0 else 0
         self._footer.value = f"共 {total} 筆詞條 │ 平均成功率 {rate:.0f}%"
 
-        if self.page:
+        if self._mounted:
             self._terms_list.update()
             self._footer.update()
 

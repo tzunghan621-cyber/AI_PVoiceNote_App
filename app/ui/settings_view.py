@@ -11,9 +11,16 @@ from app.ui.main_view import COLOR_BG, COLOR_SURFACE, COLOR_TEXT, COLOR_TEXT_DIM
 class SettingsView(ft.Container):
     def __init__(self, config: ConfigManager):
         self.config = config
+        self._mounted = False
         self._fields: dict[str, ft.Control] = {}
         content = self._build()
         super().__init__(content=content, expand=True, bgcolor=COLOR_BG, padding=20)
+
+    def did_mount(self):
+        self._mounted = True
+
+    def will_unmount(self):
+        self._mounted = False
 
     def _build(self) -> ft.Column:
         return ft.Column([
@@ -113,7 +120,7 @@ class SettingsView(ft.Container):
                         pass
                 self.config.set(key, val)
         self.config.save()
-        if hasattr(self, 'page') and self.page:
+        if self._mounted:
             self.page.show_dialog(ft.SnackBar(content=ft.Text("設定已儲存")))
 
     def _reset(self, e):
@@ -127,5 +134,5 @@ class SettingsView(ft.Container):
                 control.value = bool(val)
             elif isinstance(control, (ft.TextField, ft.Dropdown)):
                 control.value = str(val)
-            if self.page:
+            if self._mounted:
                 control.update()

@@ -26,6 +26,7 @@ class StatusBar(ft.Container):
 
     def __init__(self, config: ConfigManager):
         self.config = config
+        self._mounted = False
         self._ollama_status = ft.Text("🔴 Ollama 未連線", size=12, color=COLOR_TEXT_DIM)
         self._model_name = ft.Text(
             config.get("ollama.model", "gemma4:e2b"), size=12, color=COLOR_TEXT_DIM
@@ -54,6 +55,12 @@ class StatusBar(ft.Container):
             height=32,
         )
 
+    def did_mount(self):
+        self._mounted = True
+
+    def will_unmount(self):
+        self._mounted = False
+
     def update_ollama(self, connected: bool, loading: bool = False):
         if loading:
             self._ollama_status.value = "🟡 模型載入中"
@@ -61,12 +68,12 @@ class StatusBar(ft.Container):
             self._ollama_status.value = "🟢 Ollama 已連線"
         else:
             self._ollama_status.value = "🔴 Ollama 未連線"
-        if self.page:
+        if self._mounted:
             self._ollama_status.update()
 
     def update_term_count(self, count: int):
         self._term_count.value = f"{count} 筆詞條"
-        if self.page:
+        if self._mounted:
             self._term_count.update()
 
     def update_temp_usage(self):
@@ -77,7 +84,7 @@ class StatusBar(ft.Container):
             self._temp_usage.value = f"暫存: {mb:.0f}MB"
         except Exception:
             self._temp_usage.value = "暫存: --"
-        if self.page:
+        if self._mounted:
             self._temp_usage.update()
 
     def set_meeting_mode(self, active: bool, last_summary: str = "", next_summary: str = ""):
@@ -86,7 +93,7 @@ class StatusBar(ft.Container):
             self._summary_time.value = f"│ 上次摘要: {last_summary} │ 下次: ~{next_summary}"
         else:
             self._summary_time.visible = False
-        if self.page:
+        if self._mounted:
             self._summary_time.update()
 
 

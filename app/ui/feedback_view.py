@@ -14,13 +14,17 @@ class FeedbackView(ft.Container):
     def __init__(self, knowledge_base, feedback_store):
         self.kb = knowledge_base
         self.feedback_store = feedback_store
+        self._mounted = False
         self._content = ft.Column(expand=True, spacing=8, scroll=ft.ScrollMode.AUTO)
         super().__init__(content=self._content, expand=True, bgcolor=COLOR_BG, padding=15)
         # [Bug #7] 不可在 __init__ 內呼叫 update()；改在 did_mount() 觸發
 
     def did_mount(self):
-        # Flet 0.84 lifecycle：mount 後才能安全 update
+        self._mounted = True
         self.refresh()
+
+    def will_unmount(self):
+        self._mounted = False
 
     def refresh(self):
         self._content.controls.clear()
@@ -36,7 +40,7 @@ class FeedbackView(ft.Container):
         # 最近 Session 回饋
         self._build_recent_sessions()
 
-        if self.page:
+        if self._mounted:
             self._content.update()
 
     def _build_overview(self):
