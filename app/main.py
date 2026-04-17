@@ -246,6 +246,7 @@ def main(page: ft.Page):
     dashboard = DashboardView(
         page=page, config=config, session_manager=session_mgr,
         knowledge_base=None, feedback_store=feedback_store, exporter=exporter,
+        audio_recorder=recorder,
         on_start_recording=on_start_recording,
         on_import_audio=on_import_audio,
         on_stop_recording=on_stop_recording,
