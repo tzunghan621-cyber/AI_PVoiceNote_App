@@ -5,14 +5,18 @@ T-F2: SummaryPanel.update_highlights pre-mount 不 raise
 T-F3: ActionsPanel.set_items pre-mount 不 raise
 T-F4: TranscriptPanel.append pre-mount 不 raise
 T-F8: BaseControl.page 未 mount 時 raise RuntimeError（contract 守護）
+T-F10: 所有 ft.FilePicker() 建立處必須掛 page.overlay（L4a 框架服務使用契約，Bug #17）
 
 參考：flet_0.84_async_lifecycle_20260417.md §1 + §7.2
+       bug_report_flet_api_20260406.md §Bug #17
 """
 
 from __future__ import annotations
 
 import concurrent.futures
 import inspect
+import pathlib
+import re
 
 import pytest
 import flet as ft
@@ -146,3 +150,78 @@ class TestFletPagePropertyContract:
         panel = SummaryPanel(editable=False)
         with pytest.raises(RuntimeError):
             _ = panel.page
+
+
+# ─── T-F10: FilePicker 必須掛 page.overlay (L4a 框架服務使用契約) ───
+
+class TestFilePickerOverlayContract:
+    """T-F10：Flet 0.84 `ft.FilePicker` 是 service control，
+    呼叫 `save_file` / `pick_files` 時需透過 session message channel
+    dispatch 到 client；picker 未 mount 在 page tree（通常是 `page.overlay`）
+    會讓 `_invoke_method` 找不到 session 綁定 → `RuntimeError: Session closed`。
+
+    Bug #17（V Phase 第七輪甲方實機匯出 Markdown 首次暴露）。
+
+    防線：grep-based pattern test — 專案內所有 `ft.FilePicker()` 建立處
+    對應函式內必定出現 `overlay.append(picker)` 呼叫。此測試屬 L4a
+    （框架服務使用契約），現有 T-F1/T-F8 只驗 API 簽章 / property
+    lifecycle，不驗「要怎麼用才 work」。
+
+    若 Flet 未來版本放寬此契約（picker 可直接呼叫 save_file 而不 mount），
+    仍可保留本 test — 它會持續防止「有人建 FilePicker 忘了 overlay」的
+    回歸，即便當下不再炸也屬 dead pattern。
+    """
+
+    APP_DIR = pathlib.Path(__file__).resolve().parents[2] / "app"
+
+    def _iter_filepicker_sites(self):
+        """yield (file, func_name, func_text) 若 func 內建 ft.FilePicker()"""
+        func_pattern = re.compile(
+            r"^(\s*)(?:async\s+)?def\s+(\w+)\s*\(.*?\):\s*\n(.*?)(?=^\1(?:async\s+)?def\s+|^\1class\s+|\Z)",
+            re.DOTALL | re.MULTILINE,
+        )
+        for path in self.APP_DIR.rglob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            if "ft.FilePicker()" not in text:
+                continue
+            for match in func_pattern.finditer(text):
+                func_name = match.group(2)
+                func_text = match.group(0)
+                if "ft.FilePicker()" in func_text:
+                    yield path, func_name, func_text
+
+    def test_every_filepicker_usage_mounts_to_overlay(self):
+        """App 內每個 ft.FilePicker() 建立處同函式內必含 overlay.append(picker)。
+
+        若此測試 fail：Bug #17 風格回歸出現（即 `RuntimeError: Session closed`
+        潛伏），追建 picker 的函式並加 `page.overlay.append(picker)` pattern。
+        """
+        sites = list(self._iter_filepicker_sites())
+        assert sites, (
+            "Expected to find at least one `ft.FilePicker()` in app/ "
+            "(dashboard export/import, terms_view import). Did they "
+            "all get replaced with a different API? Update this test."
+        )
+        violations = []
+        for path, func_name, func_text in sites:
+            if "overlay.append" not in func_text:
+                violations.append(f"{path.name}::{func_name}")
+        assert not violations, (
+            "Bug #17 regression — the following functions create "
+            "`ft.FilePicker()` without mounting to `page.overlay`:\n  - "
+            + "\n  - ".join(violations)
+            + "\nPattern required (bug_report §Bug #17):\n"
+              "  picker = ft.FilePicker()\n"
+              "  self._page_ref.overlay.append(picker); self._page_ref.update()\n"
+              "  try:\n      path = await picker.save_file(...)\n"
+              "  finally:\n      self._page_ref.overlay.remove(picker); self._page_ref.update()"
+        )
+
+    def test_every_filepicker_usage_removes_from_overlay(self):
+        """搭配 append 必須有 remove（finally 內）避免累積洩漏。"""
+        for path, func_name, func_text in self._iter_filepicker_sites():
+            if "overlay.append" in func_text:
+                assert "overlay.remove" in func_text, (
+                    f"{path.name}::{func_name} appends FilePicker to overlay "
+                    f"but never removes it (should be in finally block)."
+                )
