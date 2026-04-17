@@ -1192,6 +1192,86 @@ async def _handle_export(self, e):
 
 Bug #17 屬 **L4a — 框架服務使用契約**。現有 contract tests（T-F1/T-F8）只驗 Flet API 回傳型別 + property lifecycle，沒驗**「要怎麼用才 work」的使用慣例**（如 FilePicker 必須在 overlay）。L4a 的測試建議：**grep-based pattern test**（上面 §驗證條件 #2）檢查專案內所有同類使用點。
 
+---
+
+## Bug #18：FilePicker overlay 修法後仍 TimeoutException + Session closed 🔴
+
+| 項目 | 內容 |
+|---|---|
+| 狀態 | 🔴 待修復（2026-04-18 Bug #16 診斷實機前置試跑時暴露） |
+| 觸發 | review 模式按「匯出 Markdown」（碼農 B commit `d0eae14` 已套 `overlay.append + try/finally` 標準 pattern，但仍炸） |
+| 檔案 | [app/ui/dashboard_view.py:1014 `_handle_export`](app/ui/dashboard_view.py#L1014)（主要）+ 同類匯入路徑 |
+| 類別 | **L4a Flet 0.84 框架服務使用契約（更深層）** — overlay mount 後 client 仍未在 10s 內註冊 FilePicker |
+| 阻塞 | 匯出功能完全不可用；V8 實機驗證受阻 |
+| 嚴重度 | 🟥 高 — 核心交付功能 dead |
+| 指派建議 | **碼農 B**（延續 Bug #17 戰線，研究 Flet 0.84 FilePicker 正確掛載模式） |
+
+### 完整 Traceback
+
+`doc/reports/bug18_evidence_run.log`（commit `cfcaba3`）：
+
+```
+RuntimeError: TimeoutException after 0:00:10.000000:
+  Timeout waiting for invoke method listener for FilePicker(1077).save_file
+ERROR:flet:Unhandled error in 'on_click' handler
+  ...
+  RuntimeError: Session closed
+INFO:flet:Session was garbage collected: IPP97dHlwCml9qJJ
+```
+
+### 根因推論（待碼農 B 驗證）
+
+碼農 B Bug #17 修法已正確套用標準 pattern：
+```python
+picker = ft.FilePicker()
+self._page_ref.overlay.append(picker)
+self._page_ref.update()
+try:
+    path = await picker.save_file(...)
+finally:
+    ...
+```
+
+但 `overlay.append` + `page.update()` 後 Flet client（Flutter 端）**沒在 10 秒內完成 FilePicker 註冊**，導致 `save_file` 的 `invoke_method listener` 等不到。
+
+**推測方向：**
+- A. `overlay.append` 後 client 註冊 FilePicker 需要更長時間 / 需要特定 ready signal
+- B. 應在 App 初始化（main()）時就建一個**共用** FilePicker 預掛載到 `page.overlay`，而非每次 on_click 建新的
+- C. Flet 0.84 可能有 `page.update_async()` 或需要 `await` 某個事件
+
+### 連帶現象
+
+- 錯誤後甲方無法退出該 session review 畫面（只能刪除該 session 才能回主畫面）
+- 推測：例外吞掉後 UI 狀態沒回復（`_handle_export` 的 finally 只移除 picker，沒處理「匯出流程失敗但 UI 留在 review」）
+
+### 修復方向建議（給碼農 B）
+
+**方案 A — 預建共用 FilePicker（推薦）**
+- `main.py` 建構 MainView 時建一個 FilePicker，append 到 `page.overlay`
+- DashboardView / TermsView 透過 constructor 或 setter 拿到共用 picker reference
+- 需要時呼叫其 `save_file` / `pick_files`，不用動 overlay
+
+**方案 B — 註冊等待**
+- `overlay.append` 後 `await asyncio.sleep(X)` 讓 client 完成註冊
+- 脆弱，不推薦
+
+**連帶修：** `_handle_export` 的 except 路徑應該讓 UI 可退出 review（例如 SnackBar 提示 + 不 lock UI）。
+
+### 驗證條件（修完後 Verifier 重測）
+
+1. 148 fast tests 無 regression
+2. 實機：甲方按「匯出 Markdown」→ Windows 存檔對話框實際彈出 → 選路徑 → 匯出成功 + session status=exported
+3. 實機：匯入音檔路徑同步驗證
+4. T-F10 grep-based contract test 綠燈 + **新增 T-F11**：用真 Flet session 跑一次 `save_file` happy path（不能 mock） — **L4a 再往下一層：grep 綠燈 ≠ runtime 真的 work**
+
+### 為什麼 T-F10 綠燈但現實炸（L4a 新層）
+
+T-F10 只 grep `overlay.append` 存在於同一個 function → 驗不到 runtime 行為。**這是 L4a 裡的更深層 gap**：
+- L4a 第一層（Bug #17）：「要怎麼用才 work」— 有 overlay 就 work
+- L4a 第二層（Bug #18）：「用了還要怎麼 work」— 有 overlay 也可能 timeout
+
+建議 V8 補真 runtime smoke（`tests/runtime/` 新目錄？），或接受「最後一哩只能實機驗」。
+
 ### 附帶建議（與 Bug #17 同 PR 修）
 
 **Obs-8（實驗者 V7 §11.8）**：甲方「按停止要等很久（>1 分鐘）」— drain + Gemma final summary 耗時期間 UI 無反饋。研究者 V6 §5.4 C11 已建議「drain 期間可顯示停止中 indicator」，碼農 A 未實作。建議碼農 B 修 Bug #17 時順手在 `on_stop_recording` 觸發後 `status_bar` 或 dashboard 頂部加「處理中...」臨時提示，直到 `set_mode("review")` 時消失。
