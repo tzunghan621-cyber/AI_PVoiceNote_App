@@ -1,0 +1,102 @@
+INFO:flet:Assets path configured: C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\assets
+INFO:flet:Starting up TCP server on localhost:50354
+INFO:flet:Flet app has started...
+INFO:flet:App URL: tcp://localhost:50354
+INFO:flet_desktop:Starting Flet View app...
+INFO:flet_desktop:Flet client found in cache: C:\Users\junk6\.flet\client\flet-desktop-full-0.84.0
+INFO:flet:App session started
+INFO:sentence_transformers.SentenceTransformer:Use pytorch device_name: cpu
+INFO:sentence_transformers.SentenceTransformer:Load pretrained SentenceTransformer: paraphrase-multilingual-MiniLM-L12-v2
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/modules.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/config_sentence_transformers.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/config_sentence_transformers.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/README.md "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/modules.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/sentence_bert_config.json "HTTP/1.1 307 Temporary Redirect"
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+WARNING:huggingface_hub.utils._http:Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/sentence_bert_config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/adapter_config.json "HTTP/1.1 404 Not Found"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/config.json "HTTP/1.1 200 OK"
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|¢i¢i¢i¢i¢i¢i¢i¢i¢i¢i| 199/199 [00:00<00:00, 4417.93it/s]
+[1mBertModel LOAD REPORT[0m from: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+Key                     | Status     |  | 
+------------------------+------------+--+-
+embeddings.position_ids | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/tokenizer_config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/tokenizer_config.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/1_Pooling/config.json "HTTP/1.1 307 Temporary Redirect"
+INFO:httpx:HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/1_Pooling%2Fconfig.json "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://huggingface.co/api/models/Systran/faster-whisper-small/revision/main "HTTP/1.1 200 OK"
+ERROR:flet:Unhandled error in 'on_click' handler
+Traceback (most recent call last):
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 335, in dispatch_event
+    await control._trigger_event(event_name, event_data)
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 454, in _trigger_event
+    await event_handler(e)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 1014, in _handle_export
+    path = await picker.save_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\services\file_picker.py", line 290, in save_file
+    return await self._invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 398, in _invoke_method
+    return await self.page.session.invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 392, in invoke_method
+    raise RuntimeError(err)
+RuntimeError: TimeoutException after 0:00:10.000000: Timeout waiting for invoke method listener for FilePicker(1076).save_file
+ERROR:flet:Unhandled error in 'on_click' handler
+Traceback (most recent call last):
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 335, in dispatch_event
+    await control._trigger_event(event_name, event_data)
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 454, in _trigger_event
+    await event_handler(e)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 1014, in _handle_export
+    path = await picker.save_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\services\file_picker.py", line 290, in save_file
+    return await self._invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 398, in _invoke_method
+    return await self.page.session.invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 392, in invoke_method
+    raise RuntimeError(err)
+RuntimeError: TimeoutException after 0:00:10.000000: Timeout waiting for invoke method listener for FilePicker(1077).save_file
+ERROR:flet:Unhandled error in 'on_click' handler
+Traceback (most recent call last):
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 335, in dispatch_event
+    await control._trigger_event(event_name, event_data)
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 454, in _trigger_event
+    await event_handler(e)
+  File "C:\Users\junk6\ClaudeCode\P_AI_Dev\AI_PVoiceNote_App\app\ui\dashboard_view.py", line 1014, in _handle_export
+    path = await picker.save_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\services\file_picker.py", line 290, in save_file
+    return await self._invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\controls\base_control.py", line 398, in _invoke_method
+    return await self.page.session.invoke_method(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\junk6\AppData\Local\Programs\Python\Python311\Lib\site-packages\flet\messaging\session.py", line 392, in invoke_method
+    raise RuntimeError(err)
+RuntimeError: Session closed
+INFO:flet:Session was garbage collected: IPP97dHlwCml9qJJ
