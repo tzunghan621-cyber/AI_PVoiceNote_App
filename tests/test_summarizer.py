@@ -7,7 +7,7 @@ import yaml
 from unittest.mock import AsyncMock, patch, MagicMock
 
 from app.data.config_manager import ConfigManager
-from app.core.summarizer import Summarizer
+from app.core.summarizer import Summarizer, EmptySummaryError
 from app.core.models import (
     CorrectedSegment, SummaryResult, ActionItem, Participant,
 )
@@ -213,3 +213,80 @@ class TestReset:
         summarizer._version = 5
         summarizer.reset()
         assert summarizer._version == 0
+
+
+# ─────────────────────────────────────────────────────────────
+# Bug #16 修法 A / B — incremental prompt schema + EmptySummaryError
+# ─────────────────────────────────────────────────────────────
+
+
+class TestBug16IncrementalPromptSchema:
+    """修法 A：incremental prompt 必須明列英文 key schema，防止 Gemma 回中文 key"""
+
+    @pytest.mark.asyncio
+    async def test_incremental_prompt_contains_json_schema(self, config):
+        summarizer = Summarizer(config)
+        segments = _make_segments(5, start_index=5)
+        prev = SummaryResult(
+            version=1, highlights="前次重點",
+            action_items=[], decisions=[], keywords=[],
+            covered_until=4,
+            model="gemma4:e2b", generation_time=1.0, is_final=False,
+        )
+        call_args = {}
+
+        async def capture_prompt(prompt):
+            call_args['prompt'] = prompt
+            return _mock_ollama_response()
+
+        with patch.object(summarizer, '_call_ollama', side_effect=capture_prompt):
+            await summarizer.generate(segments, previous_summary=prev)
+
+        prompt = call_args['prompt']
+        # 四個英文 key 必須明列於 prompt
+        assert '"highlights"' in prompt
+        assert '"action_items"' in prompt
+        assert '"decisions"' in prompt
+        assert '"keywords"' in prompt
+        # 必須明示「不可翻譯為中文 key」
+        assert "不可翻譯為中文" in prompt
+
+
+class TestBug16EmptySummaryError:
+    """修法 B：parse 成功但摘要全空 → raise EmptySummaryError，不回靜默空 SummaryResult"""
+
+    @pytest.mark.asyncio
+    async def test_summarizer_raises_empty_summary_error_on_empty_parse(self, config):
+        """Gemma 回中文 key → parsed 成 dict 但 get 英文 key 全 miss → 應 raise"""
+        summarizer = Summarizer(config)
+        segments = _make_segments(5)
+        # 模擬 Bug #16 實機場景：Gemma 回中文 key 的 JSON
+        bad_response = json.dumps({
+            "會議重點": ["討論了模型"],
+            "Action Items": [],
+            "決議事項": [],
+        }, ensure_ascii=False)
+
+        with patch.object(summarizer, '_call_ollama', new_callable=AsyncMock,
+                          return_value=bad_response):
+            with pytest.raises(EmptySummaryError):
+                await summarizer.generate(segments)
+
+    @pytest.mark.asyncio
+    async def test_empty_summary_error_not_raised_on_partial_content(self, config):
+        """只要任一欄位非空就不 raise（避免誤殺正常內容）"""
+        summarizer = Summarizer(config)
+        segments = _make_segments(5)
+        partial = json.dumps({
+            "highlights": "",
+            "action_items": [],
+            "decisions": [],
+            "keywords": ["key1"],  # 只有 keywords 有內容
+        }, ensure_ascii=False)
+
+        with patch.object(summarizer, '_call_ollama', new_callable=AsyncMock,
+                          return_value=partial):
+            result = await summarizer.generate(segments)
+
+        assert isinstance(result, SummaryResult)
+        assert result.keywords == ["key1"]

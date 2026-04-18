@@ -352,7 +352,7 @@ streaming:
   summary_interval_sec: 180       # 摘要更新週期（秒），預設 3 分鐘
   summary_min_new_segments: 10    # 至少累積 N 個新 segments 才觸發摘要
   final_summary_timeout_sec: 120  # final summary 最長等待（秒）— 超時用最近週期 summary 當 final（G2）
-  stop_drain_timeout_sec: 90      # 停止時等 pipeline drain 最長（秒）— 超時 cancel 進 aborted（G3）
+  stop_drain_timeout_sec: 190     # 停止時等 pipeline drain 最長（秒）— 超時 cancel 進 aborted（G3）。**必須 ≥ pending_summary_wait_sec + final_summary_timeout_sec + 10s buffer**（Bug #16 修法 D / F-1：否則 watchdog 早於 final timeout 觸發，session 誤入 aborted）
   pending_summary_wait_sec: 60    # 停止當下若 pending summary 正跑，最多等這麼久再 cancel（G3）
 
 # 音訊

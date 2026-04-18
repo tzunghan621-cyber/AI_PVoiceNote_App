@@ -172,7 +172,7 @@ tags:
 - final summary 超時 / Ollama 失敗 → 用最近週期 summary 當 final（`fallback_reason="ollama_timeout"` 或 `"ollama_failure"`），仍 transition 進 `ready`
 - 整條路徑（正常或 fallback）**必須先 `session_mgr.save` 再 UI 轉場**（對應 I1 invariant）
 
-**異常路徑（G1 aborted）：** Pipeline 內部 crash、stop drain 超過 `stop_drain_timeout_sec`（預設 90s）、或 cancel watchdog 觸發 → transition 進 `aborted`，填 `abort_reason`，仍 save + UI 轉 review（部分 segments 可審閱）。
+**異常路徑（G1 aborted）：** Pipeline 內部 crash、stop drain 超過 `stop_drain_timeout_sec`（預設 190s，須 ≥ pending_wait + final_timeout + 10s buffer；見 Bug #16 F-1）、或 cancel watchdog 觸發 → transition 進 `aborted`，填 `abort_reason`，仍 save + UI 轉 review（部分 segments 可審閱）。
 
 詳見 [[pipeline_lifecycle_architecture_20260416]]。
 

@@ -287,3 +287,101 @@ class TestSyncTranscriberIntegration:
         # 最終摘要應正常產出
         session_mgr.end_recording.assert_called_once()
         session_mgr.mark_ready.assert_called_once()
+
+
+# ─────────────────────────────────────────────────────────────
+# Bug #16 修法 C — _build_fallback_final F-2 guard（向前找 summary_history 非空版本）
+# ─────────────────────────────────────────────────────────────
+
+
+def _make_summary(version: int, highlights: str) -> SummaryResult:
+    return SummaryResult(
+        version=version,
+        highlights=highlights,
+        action_items=[],
+        decisions=[],
+        keywords=[],
+        covered_until=version * 10,
+        model="gemma4:e2b",
+        generation_time=1.0,
+        is_final=False,
+    )
+
+
+class TestBug16FallbackFinalGuard:
+    """修法 C：_build_fallback_final 應跳過空 highlights 版本，向前找第一個非空"""
+
+    def test_build_fallback_final_skips_empty_and_finds_non_empty_history(self, config):
+        """V2/V3 empty → 應複用 V1（非空）當 final，而非複用最新空的 V3"""
+        sp = StreamProcessor(
+            _make_mock_transcriber(), _make_mock_corrector(),
+            _make_mock_summarizer(), _make_mock_session_manager(), config,
+        )
+        session = Session(title="fallback guard test")
+        # 歷史：V1 有內容，V2/V3 空（模擬 Bug #16 實機場景）
+        v1 = _make_summary(1, "V1 實際會議重點")
+        v2 = _make_summary(2, "")
+        v3 = _make_summary(3, "")
+        session.summary_history = [v1, v2, v3]
+        session.summary = v3  # 最新（空）
+
+        result = sp._build_fallback_final(session, "ollama_timeout")
+
+        assert result.is_final is True
+        assert result.fallback_reason == "ollama_timeout"
+        # 關鍵：應複用 V1 非空內容，不是 V3 空
+        assert result.highlights == "V1 實際會議重點"
+        assert result.version == v1.version + 1
+
+    def test_build_fallback_final_all_empty_returns_placeholder(self, config):
+        """summary_history 全空 → 回占位失敗文案 final（保證非 None）"""
+        sp = StreamProcessor(
+            _make_mock_transcriber(), _make_mock_corrector(),
+            _make_mock_summarizer(), _make_mock_session_manager(), config,
+        )
+        session = Session(title="all empty")
+        session.summary_history = [_make_summary(1, ""), _make_summary(2, "")]
+
+        result = sp._build_fallback_final(session, "ollama_failure")
+
+        assert result.is_final is True
+        assert result.fallback_reason == "ollama_failure"
+        assert "摘要生成失敗" in result.highlights
+
+    def test_build_fallback_final_no_history_returns_placeholder(self, config):
+        """summary_history 為空 list → 回占位失敗文案"""
+        sp = StreamProcessor(
+            _make_mock_transcriber(), _make_mock_corrector(),
+            _make_mock_summarizer(), _make_mock_session_manager(), config,
+        )
+        session = Session(title="no history")
+        session.summary_history = []
+
+        result = sp._build_fallback_final(session, "pending_summary_timeout")
+
+        assert result.is_final is True
+        assert "摘要生成失敗" in result.highlights
+
+
+# ─────────────────────────────────────────────────────────────
+# Bug #16 修法 D — stop_drain_timeout 必須涵蓋 pending + final（F-1 時序張力）
+# ─────────────────────────────────────────────────────────────
+
+
+class TestBug16StopDrainTimeoutCoversPendingPlusFinal:
+    """修法 D (D1)：config default 的 stop_drain_timeout_sec 必須 ≥ pending_wait + final_timeout + buffer"""
+
+    def test_stop_drain_timeout_covers_pending_plus_final(self):
+        """讀 repo default config，驗 F-1 時序張力已解除"""
+        from pathlib import Path
+        default_yaml = Path(__file__).resolve().parents[1] / "config" / "default.yaml"
+        cfg = ConfigManager(str(default_yaml))
+        pending = cfg.get("streaming.pending_summary_wait_sec", 60)
+        final = cfg.get("streaming.final_summary_timeout_sec", 120)
+        drain = cfg.get("streaming.stop_drain_timeout_sec", 90)
+        buffer = 10
+
+        assert drain >= pending + final + buffer, (
+            f"F-1 時序張力未解除：stop_drain({drain}) < pending({pending}) "
+            f"+ final({final}) + buffer({buffer}) = {pending + final + buffer}"
+        )

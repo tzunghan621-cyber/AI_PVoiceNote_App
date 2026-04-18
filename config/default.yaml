@@ -25,7 +25,7 @@ streaming:
   audio_chunk_duration_sec: 600
   final_summary_timeout_sec: 120
   pending_summary_wait_sec: 60
-  stop_drain_timeout_sec: 90
+  stop_drain_timeout_sec: 190  # Bug #16 修法 D (F-1): 必須 >= pending_summary_wait_sec(60) + final_summary_timeout_sec(120) + buffer(10)，否則 watchdog 早於 final timeout 觸發 → session 誤 abort
   summary_interval_sec: 180
   summary_min_new_segments: 10
   transcribe_chunk_sec: 10

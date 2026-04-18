@@ -11,6 +11,7 @@ import numpy as np
 
 from app.data.config_manager import ConfigManager
 from app.core.models import CorrectedSegment, SummaryResult, Session
+from app.core.summarizer import EmptySummaryError
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,18 @@ class StreamProcessor:
                 self.on_summary(summary)
         except asyncio.CancelledError:
             raise
+        except EmptySummaryError:
+            # [Bug #16 修法 B] 週期版 parse 空 → 複用 summary_history 最近非空，不覆蓋 UI
+            logger.warning(
+                "Periodic summary parsed empty — applying fallback (empty_parse)"
+            )
+            fallback = self._build_fallback_summary(
+                session, "empty_parse", is_final=False,
+            )
+            if fallback is not None:
+                self.session_mgr.update_summary(session, fallback)
+                if self.on_summary:
+                    self.on_summary(fallback)
         except Exception:
             # C7：summary task 內部例外不可 propagate，否則主迴圈死掉（Bug #9 重現）
             logger.exception("Periodic summary generation failed")
@@ -177,6 +190,10 @@ class StreamProcessor:
                 self.final_summary_timeout_sec,
             )
             return self._build_fallback_final(session, "ollama_timeout")
+        except EmptySummaryError:
+            # [Bug #16 修法 B] final 也可能 parse 空（不太會走到，但為一致性 catch）
+            logger.warning("Final summary parsed empty — using fallback (empty_parse)")
+            return self._build_fallback_final(session, "empty_parse")
         except Exception:
             logger.exception("Final summary failed — using fallback")
             reason = "pending_summary_timeout" if pending_timeout else "ollama_failure"
@@ -185,21 +202,36 @@ class StreamProcessor:
     def _build_fallback_final(
         self, session: Session, reason: str,
     ) -> SummaryResult:
-        """fallback：有最近週期 summary → 複用並標 is_final；無則產空殼 final"""
-        last = session.summary
-        if last is not None:
-            return SummaryResult(
-                version=last.version + 1,
-                highlights=last.highlights,
-                action_items=list(last.action_items),
-                decisions=list(last.decisions),
-                keywords=list(last.keywords),
-                covered_until=last.covered_until,
-                model=last.model,
-                generation_time=0.0,
-                is_final=True,
-                fallback_reason=reason,
-            )
+        """fallback：向前找 summary_history 最近非空版本當 final；全無則產空殼 final（F-2 guard）"""
+        result = self._build_fallback_summary(session, reason, is_final=True)
+        # final 分支：全無非空也要回占位 final（保證非 None），由 _build_fallback_summary 保證
+        assert result is not None
+        return result
+
+    def _build_fallback_summary(
+        self, session: Session, reason: str, is_final: bool,
+    ) -> SummaryResult | None:
+        """F-2 guard 共用：向前找 summary_history 第一個 highlights 非空的版本複用。
+
+        - is_final=True 且全無非空 → 回占位 SummaryResult（顯示失敗文案）
+        - is_final=False 且全無非空 → 回 None（週期版不 update，UI 保留前版）
+        """
+        for candidate in reversed(session.summary_history or []):
+            if (candidate.highlights or "").strip():
+                return SummaryResult(
+                    version=candidate.version + 1,
+                    highlights=candidate.highlights,
+                    action_items=list(candidate.action_items),
+                    decisions=list(candidate.decisions),
+                    keywords=list(candidate.keywords),
+                    covered_until=candidate.covered_until,
+                    model=candidate.model,
+                    generation_time=0.0,
+                    is_final=is_final,
+                    fallback_reason=reason,
+                )
+        if not is_final:
+            return None
         return SummaryResult(
             version=1,
             highlights="(摘要生成失敗，已保留逐字稿供手動整理)",
